@@ -24,7 +24,7 @@ use crate::{
     },
     elf::ElfFile,
     sdf::{
-        CapMapType, CpuCore, Map, SystemDescription, BUDGET_DEFAULT, MONITOR_DOMAIN,
+        CapMapType, CapMapSource, CpuCore, Map, SystemDescription, BUDGET_DEFAULT, MONITOR_DOMAIN,
         MONITOR_PD_NAME, MONITOR_PRIORITY,
     },
     sel4::{Arch, Config, PageSize},
@@ -486,6 +486,7 @@ pub fn build_capdl_spec(
             capdl_util_make_cte(MON_REPLY_CAP_IDX as u32, mon_reply_cap),
         ]
         .to_vec(),
+        false,
     );
     let mon_guard_size = kernel_config.cap_address_bits - PD_CAP_BITS as u64;
     let mon_cnode_cap = capdl_util_make_cnode_cap(mon_cnode_obj_id, 0, mon_guard_size as u8);
@@ -645,7 +646,33 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 3. Create the PDs' spec
+    // Step 3. Create the CNodes' spec
+    // *********************************
+    let mut user_cnodes: HashMap<String, (ObjectId, u8)> = HashMap::new();
+    for cnode in system.cnodes.iter() {
+        let cnode_obj_id = capdl_util_make_cnode_obj(
+            &mut spec_container,
+            &(cnode.name.clone()),
+            cnode.size_bits,
+            Vec::new(),
+            cnode.post_capdl_untypeds,
+        );
+
+        // Have a cap at slot 0 pointing to itself
+        let pd_guard_size = kernel_config.cap_address_bits - cnode.size_bits as u64 - PD_ROOT_CAP_BITS as u64;
+        let cnode_cap_self_ref = capdl_util_make_cnode_cap(cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
+        capdl_util_insert_cap_into_cspace(
+            &mut spec_container,
+            cnode_obj_id,
+            0,
+            cnode_cap_self_ref,
+        );
+
+        user_cnodes.insert(cnode.name.clone(), (cnode_obj_id, cnode.size_bits));
+    }
+
+    // *********************************
+    // Step 4. Create the PDs' spec
     // *********************************
     // On ARM, check if we need to create the SMC object
     let arm_smc_obj_id = if kernel_config.arch == Arch::Aarch64
@@ -663,6 +690,7 @@ pub fn build_capdl_spec(
     // This object keeps track of object IDs for various 'important' / nameable kernel objects for
     // each PD so that we can make various references to them at later steps.
     let mut pd_shadow_cspaces: HashMap<usize, PDShadowCspace> = HashMap::new();
+    let mut pd_shadow_cspaces_name_to_id: HashMap<String, usize> = HashMap::new();
 
     // Keep track of the global count of vCPU objects so we can bind them to the monitor for setting TCB name in debug config.
     // Only used on ARM and RISC-V as on x86-64 VMs share the same TCB as PD's which will have their TCB name set separately.
@@ -681,7 +709,7 @@ pub fn build_capdl_spec(
         let mut caps_to_insert_to_pd_cspace: Vec<CapTableEntry> = Vec::new();
         let mut caps_to_insert_to_pd_delegation_cnode: Vec<CapTableEntry> = Vec::new();
 
-        // Step 3-1: Create TCB and VSpace with all ELF loadable frames mapped in.
+        // Step 4-1: Create TCB and VSpace with all ELF loadable frames mapped in.
         let pd_elf_spec = spec_container
             .add_elf_to_spec(kernel_config, &pd.name, pd.cpu, pd_global_idx, elf_obj)
             .unwrap();
@@ -711,7 +739,7 @@ pub fn build_capdl_spec(
             ))
         }
 
-        // Step 3-2: Map in all Memory Regions
+        // Step 4-2: Map in all Memory Regions
         let mut next_delegated_mr_cap = DLG_MR_CAP;
         for map in pd.maps.iter() {
             let frames = &mr_name_to_frames[&map.mr];
@@ -764,7 +792,7 @@ pub fn build_capdl_spec(
             }
         }
 
-        // Step 3-3a: Create and map in the IPC buffer
+        // Step 4-3a: Create and map in the IPC buffer
         let ipcbuf_frame_obj_id = capdl_util_make_frame_obj(
             &mut spec_container,
             Fill { entries: vec![] },
@@ -790,7 +818,7 @@ pub fn build_capdl_spec(
             ipcbuf_frame_cap,
         ));
 
-        // Step 3-3b: Create and map in the stack (bottom up)
+        // Step 4-3b: Create and map in the stack (bottom up)
         let mut cur_stack_vaddr = kernel_config.pd_stack_bottom(pd.stack_size);
         pd_stack_bottoms.push(cur_stack_vaddr);
         let num_stack_frames = pd.stack_size / PageSize::Small as u64;
@@ -820,7 +848,7 @@ pub fn build_capdl_spec(
             cur_stack_vaddr += PageSize::Small as u64;
         }
 
-        // Step 3-4 Create Scheduling Context
+        // Step 4-4 Create Scheduling Context
         let pd_sc_obj_id = capdl_util_make_sc_obj(
             &mut spec_container,
             &pd.name,
@@ -835,7 +863,7 @@ pub fn build_capdl_spec(
             pd_sc_cap,
         ));
 
-        // Step 3-5 Create fault Endpoint cap to parent/monitor
+        // Step 4-5 Create fault Endpoint cap to parent/monitor
         let pd_fault_ep_cap = if let Some(pd_parent_id) = pd.parent {
             assert!(pd_global_idx > pd_parent_id);
             let badge: u64 = FAULT_BADGE | pd.id.unwrap();
@@ -868,7 +896,7 @@ pub fn build_capdl_spec(
             pd_fault_ep_cap.clone(),
         ));
 
-        // Step 3-6 Create cap to Monitor's endpoint for passive PDs.
+        // Step 4-6 Create cap to Monitor's endpoint for passive PDs.
         if pd.passive {
             let pd_monitor_ep_cap = capdl_util_make_endpoint_cap(
                 mon_fault_ep_obj_id,
@@ -883,7 +911,7 @@ pub fn build_capdl_spec(
             ));
         }
 
-        // Step 3-7 Create endpoint object for the PD if it has children or can receive PPCs, else it will be a notification
+        // Step 4-7 Create endpoint object for the PD if it has children or can receive PPCs, else it will be a notification
         let pd_ntfn_obj_id = capdl_util_make_ntfn_obj(&mut spec_container, &pd.name);
         let pd_ntfn_cap = capdl_util_make_ntfn_cap(pd_ntfn_obj_id, true, true, 0);
         let mut pd_ep_obj_id: Option<ObjectId> = None;
@@ -909,13 +937,13 @@ pub fn build_capdl_spec(
             pd_ntfn_cap,
         ));
 
-        // Step 3-8 Create Reply obj + cap and insert into CSpace
+        // Step 4-8 Create Reply obj + cap and insert into CSpace
         let pd_reply_obj_id = capdl_util_make_reply_obj(&mut spec_container, &pd.name);
         let pd_reply_cap = capdl_util_make_reply_cap(pd_reply_obj_id);
         caps_to_insert_to_pd_cspace
             .push(capdl_util_make_cte(PD_REPLY_CAP_IDX as u32, pd_reply_cap));
 
-        // Step 3-9 Create spec and caps to IRQs
+        // Step 4-9 Create spec and caps to IRQs
         for irq in pd.irqs.iter() {
             // Create a IRQ handler cap and insert into the requested CSpace's slot.
             let irq_handle_cap = create_irq_handler_cap(
@@ -931,7 +959,7 @@ pub fn build_capdl_spec(
                 .push(capdl_util_make_cte(irq_cap_idx as u32, irq_handle_cap));
         }
 
-        // Step 3-10 Create I/O port objects on x86 platform.
+        // Step 4-10 Create I/O port objects on x86 platform.
         for ioport in pd.ioports.iter() {
             let ioport_obj_id =
                 capdl_util_make_ioport_obj(&mut spec_container, &pd.name, ioport.addr, ioport.size);
@@ -945,7 +973,7 @@ pub fn build_capdl_spec(
             }
         }
 
-        // Step 3-11 Create VM Spec.
+        // Step 4-11 Create VM Spec.
         if let Some(virtual_machine) = &pd.virtual_machine {
             // A VM really is just a collection of special threads, it has its own TCBs, Scheduling Contexts, etc...
             // The difference is that it have a vCPU for each TCB to store the virtual CPUs' states.
@@ -1017,6 +1045,7 @@ pub fn build_capdl_spec(
                         &format!("{}_{}", virtual_machine.name, vcpu.id),
                         PD_CAP_BITS,
                         [].to_vec(),
+                        false,
                     );
                     let vm_guard_size = kernel_config.cap_address_bits - PD_CAP_BITS as u64;
                     let vm_cnode_cap =
@@ -1129,7 +1158,7 @@ pub fn build_capdl_spec(
             }
         }
 
-        // Step 3-12 Create ARM SMC cap if requested.
+        // Step 4-12 Create ARM SMC cap if requested.
         if pd.smc {
             caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(
                 PD_ARM_SMC_CAP_IDX as u32,
@@ -1137,12 +1166,13 @@ pub fn build_capdl_spec(
             ));
         }
 
-        // Step 3-13 Create CSpace and add all caps that the PD code and libmicrokit need to access.
+        // Step 4-13 Create CSpace and add all caps that the PD code and libmicrokit need to access.
         let pd_cnode_obj_id = capdl_util_make_cnode_obj(
             &mut spec_container,
             &pd.name,
             PD_CAP_BITS,
             caps_to_insert_to_pd_cspace,
+            false,
         );
         let pd_guard_size =
             kernel_config.cap_address_bits - PD_CAP_BITS as u64 - PD_ROOT_CAP_BITS as u64;
@@ -1153,6 +1183,7 @@ pub fn build_capdl_spec(
             &(pd.name.clone() + "_root"),
             PD_ROOT_CAP_BITS,
             Vec::new(),
+            false,
         );
         // leave the guard size root cnode as 0
         let pd_root_cnode_cap = capdl_util_make_cnode_cap(pd_root_cnode_obj_id, 0, 0);
@@ -1169,7 +1200,7 @@ pub fn build_capdl_spec(
             pd_root_cnode_cap,
         ));
 
-        // Step 3-14 Set the TCB parameters and all the various caps that we need to bind to this TCB.
+        // Step 4-14 Set the TCB parameters and all the various caps that we need to bind to this TCB.
         if let Object::Tcb(pd_tcb) = &mut spec_container
             .get_root_object_mut(pd_tcb_obj_id)
             .unwrap()
@@ -1191,7 +1222,7 @@ pub fn build_capdl_spec(
             unreachable!("internal bug: build_capdl_spec() got a non TCB object ID when trying to set TCB parameters for the monitor.");
         }
 
-        // Step 3-15 bind this PD's TCB to the monitor, this accomplish two purposes:
+        // Step 4-15 bind this PD's TCB to the monitor, this accomplish two purposes:
         // 1. Allow PDs' TCBs to be named to their proper name in SDF in debug config.
         // 2. Allow passive PDs.
         capdl_util_insert_cap_into_cspace(
@@ -1217,6 +1248,7 @@ pub fn build_capdl_spec(
             );
         }
 
+        pd_shadow_cspaces_name_to_id.insert(pd.name.clone(), pd_global_idx);
         pd_shadow_cspaces.insert(
             pd_global_idx,
             PDShadowCspace {
@@ -1333,7 +1365,7 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 4. Create channels
+    // Step 5. Create channels
     // *********************************
     for channel in system.channels.iter() {
         let pd_a_shadow_cspace = &pd_shadow_cspaces[&channel.end_a.pd];
@@ -1432,7 +1464,7 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 5. Create IOMMU Address Spaces
+    // Step 6. Create IOMMU Address Spaces
     // *********************************
     let mut iospace_by_device: HashMap<&str, AddressSpace> = HashMap::new();
     for iomap in system.iomaps.iter() {
@@ -1470,18 +1502,37 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 6. Handle extra cap mappings
+    // Step 7. Handle extra cap mappings
     // *********************************
     for (pd_dest_idx, pd) in system.protection_domains.iter().enumerate() {
         for cap_map in pd.cap_maps.iter() {
-            // TODO: Once we add more CapMap options, they might not all have
-            // the pd_name. But for now, they do.
-            let pd_src_shadow_cspace = &pd_shadow_cspaces[&cap_map.pd.unwrap()];
 
-            let cap_map_obj = match cap_map.cap_type {
-                CapMapType::Tcb => capdl_util_make_tcb_cap(pd_src_shadow_cspace.tcb),
-                CapMapType::Sc => capdl_util_make_sc_cap(pd_src_shadow_cspace.sched_context),
-                CapMapType::VSpace => capdl_util_make_page_table_cap(pd_src_shadow_cspace.vspace),
+            let cap_map_obj = match &cap_map.source {
+                CapMapSource::Pd(source_name) => {
+                    let pd_src_shadow_cspace_id = &pd_shadow_cspaces_name_to_id[source_name];
+                    let pd_src_shadow_cspace = &pd_shadow_cspaces[pd_src_shadow_cspace_id];
+
+                    match cap_map.cap_type {
+                        CapMapType::Tcb => capdl_util_make_tcb_cap(pd_src_shadow_cspace.tcb),
+                        CapMapType::Sc => capdl_util_make_sc_cap(pd_src_shadow_cspace.sched_context),
+                        CapMapType::VSpace => capdl_util_make_page_table_cap(pd_src_shadow_cspace.vspace),
+                        CapMapType::CSpace => {
+                            let guard_size =
+                                kernel_config.cap_address_bits as u8 - PD_ROOT_CAP_BITS - PD_CAP_BITS;
+
+                            capdl_util_make_cnode_cap(pd_src_shadow_cspace.cspace, 0, guard_size)
+                        }
+                        _ => return Err("internal bug: invalid cap source type".to_string())
+                    }
+                }
+                CapMapSource::CNode(source_name) => {
+                    if let Some((cnode_obj_id, size_bits)) = user_cnodes.get(source_name) {
+                        let pd_guard_size = kernel_config.cap_address_bits as u8 - *size_bits - PD_ROOT_CAP_BITS;
+                        capdl_util_make_cnode_cap(*cnode_obj_id, 0, pd_guard_size)
+                    } else {
+                        return Err(format!("internal bug: couldn't find CNode with given name '{source_name}'."));
+                    }
+                }
             };
 
             // Map this into the destination pd's cspace and the specified slot.
@@ -1494,7 +1545,7 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 7. Emit a domain schedule
+    // Step 8. Emit a domain schedule
     // *********************************
     if system.domains.has_domains() {
         spec_container.spec.domain_schedule = Some(system.domains.schedule.clone());
@@ -1503,7 +1554,7 @@ pub fn build_capdl_spec(
     }
 
     // *********************************
-    // Step 8. Sort the root objects
+    // Step 9. Sort the root objects
     // *********************************
     // The CapDL initialiser expects objects with paddr to come first, then sorted by size so that the
     // allocation algorithm at run-time can run more efficiently.
@@ -1514,13 +1565,13 @@ pub fn build_capdl_spec(
     // 3. Record all of the root objects new index.
     // 4. Recurse through every cap, for any cap bearing the original object ID, write the new object ID.
 
-    // Step 8-1
+    // Step 9-1
     let mut obj_name_to_old_id: HashMap<String, ObjectId> = HashMap::new();
     for (id, obj) in spec_container.spec.objects.iter().enumerate() {
         obj_name_to_old_id.insert(obj.name.as_ref().unwrap().clone(), id.into());
     }
 
-    // Step 8-2
+    // Step 9-2
     spec_container.spec.objects.sort_by(|a, b| {
         // Objects with paddrs always come first.
         if a.object.paddr().is_none() && b.object.paddr().is_some() {
@@ -1559,7 +1610,7 @@ pub fn build_capdl_spec(
         }
     });
 
-    // Step 8-3
+    // Step 9-3
     let mut obj_old_id_to_new_id: HashMap<ObjectId, ObjectId> = HashMap::new();
     for (new_id, obj) in spec_container.spec.objects.iter().enumerate() {
         obj_old_id_to_new_id.insert(
@@ -1568,7 +1619,7 @@ pub fn build_capdl_spec(
         );
     }
 
-    // Step 8-4
+    // Step 9-4
     for obj in spec_container.spec.objects.iter_mut() {
         match obj.object.slots_mut() {
             Some(caps) => {
