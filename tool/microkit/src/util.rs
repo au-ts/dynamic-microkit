@@ -17,6 +17,14 @@ pub fn lsb(x: u64) -> u64 {
     x.trailing_zeros() as u64
 }
 
+pub fn str_to_bool(s: &str) -> Option<bool> {
+    match s {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
 pub const fn kb(n: u64) -> u64 {
     n * 1024
 }
