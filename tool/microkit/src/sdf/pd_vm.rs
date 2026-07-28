@@ -68,6 +68,13 @@ pub struct SysSetVar {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum ProtectionDomainRole {
+    Normal,
+    Child,
+    Template,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ProtectionDomain {
     /// Only populated for child protection domains
     pub id: Option<u64>,
@@ -78,7 +85,7 @@ pub struct ProtectionDomain {
     pub smc: bool,
     pub cpu: CpuCore,
     pub domain: Option<u8>,
-    pub program_image: PathBuf,
+    pub program_image: Option<PathBuf>,
     pub program_image_for_symbols: Option<PathBuf>,
     /// Enable FPU for this PD.
     pub fpu: bool,
@@ -137,7 +144,7 @@ impl ProtectionDomain {
         config: &Config,
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
-        is_child: bool,
+        role: ProtectionDomainRole,
         domains: &Domains,
     ) -> Result<ProtectionDomain, String> {
         let mut attrs = vec![
@@ -154,20 +161,33 @@ impl ProtectionDomain {
             "domain",
             "fpu",
         ];
-        if is_child {
-            attrs.push("id");
-            attrs.push("setvar_id");
+        match role {
+            ProtectionDomainRole::Child => {
+                attrs.push("id");
+                attrs.push("setvar_id");
+            }
+            ProtectionDomainRole::Template => {
+                attrs.push("id");
+            }
+            ProtectionDomainRole::Normal => {}
         }
         check_attributes(xml_sdf, node, &attrs)?;
 
         let name = checked_lookup(xml_sdf, node, "name")?.to_string();
 
-        let (id, setvar_id) = if is_child {
-            let id = sdf_parse_number(checked_lookup(xml_sdf, node, "id")?, node)?;
-            let setvar_id = node.attribute("setvar_id").map(ToOwned::to_owned);
-            (Some(id), setvar_id)
-        } else {
-            (None, None)
+        let (id, setvar_id) = match role {
+            ProtectionDomainRole::Child => {
+                let id = sdf_parse_number(checked_lookup(xml_sdf, node, "id")?, node)?;
+                let setvar_id = node.attribute("setvar_id").map(ToOwned::to_owned);
+
+                (Some(id), setvar_id)
+            }
+            ProtectionDomainRole::Template => {
+                let id = sdf_parse_number(checked_lookup(xml_sdf, node, "id")?, node)?;
+
+                (Some(id), None)
+            }
+            ProtectionDomainRole::Normal => (None, None),
         };
 
         // If we do not have an explicit budget the period is equal to the default budget.
@@ -203,6 +223,16 @@ impl ProtectionDomain {
         } else {
             false
         };
+        // for a template PD, it cannot execute to block on a channel during boot,
+        // as it contains no program image, making it impossible for the microkit
+        // monitor to unbind the SC.
+        if passive && role == ProtectionDomainRole::Template {
+            return Err(value_error(
+                xml_sdf,
+                node,
+                "passive must be 'false'".to_string(),
+            ));
+        }
 
         let stack_size = if let Some(xml_stack_size) = node.attribute("stack_size") {
             sdf_parse_number(xml_stack_size, node)?
@@ -349,6 +379,13 @@ impl ProtectionDomain {
         for child in node.children() {
             match child.tag_name() {
                 "program_image" => {
+                    if role == ProtectionDomainRole::Template {
+                        return Err(value_error(
+                            xml_sdf,
+                            node,
+                            "template PD cannot have any program image".to_string(),
+                        ));
+                    }
                     check_attributes(xml_sdf, &*child, &["path", "path_for_symbols"])?;
                     if program_image.is_some() {
                         return Err(value_error(
@@ -696,8 +733,24 @@ impl ProtectionDomain {
                     checked_add_setvar(&mut setvars, setvar, xml_sdf, &*child)?;
                 }
                 "protection_domain" => {
-                    let child_pd =
-                        ProtectionDomain::from_xml(config, xml_sdf, &*child, true, domains)?;
+                    // current node who represents a template PD cannot control
+                    // other PD as a parent, so this attribute is conflict with
+                    // a template PD.
+                    if role == ProtectionDomainRole::Template {
+                        return Err(value_error(
+                            xml_sdf,
+                            node,
+                            "template PD cannot have child PDs".to_string(),
+                        ));
+                    }
+
+                    let child_pd = ProtectionDomain::from_xml(
+                        config,
+                        xml_sdf,
+                        &*child,
+                        ProtectionDomainRole::Child,
+                        domains,
+                    )?;
 
                     if let Some(setvar_id) = child_pd.setvar_id.clone() {
                         let setvar = SysSetVar {
@@ -711,12 +764,38 @@ impl ProtectionDomain {
 
                     child_pds.push(child_pd);
                 }
+                "template" => {
+                    if role == ProtectionDomainRole::Template {
+                        return Err(value_error(
+                            xml_sdf,
+                            node,
+                            "a template cannot contain another template".to_string(),
+                        ));
+                    }
+
+                    let child_pd = ProtectionDomain::from_xml(
+                        config,
+                        xml_sdf,
+                        &*child,
+                        ProtectionDomainRole::Template,
+                        domains,
+                    )?;
+
+                    child_pds.push(child_pd);
+                }
                 "virtual_machine" => {
                     if !config.hypervisor {
                         return Err(value_error(
                             xml_sdf,
                             node,
                             "seL4 has not been built as a hypervisor, virtual machines are disabled".to_string()
+                        ));
+                    }
+                    if role == ProtectionDomainRole::Template {
+                        return Err(value_error(
+                            xml_sdf,
+                            node,
+                            "template PD cannot control virtual machine".to_string(),
                         ));
                     }
                     if virtual_machine.is_some() {
@@ -763,7 +842,7 @@ impl ProtectionDomain {
             }
         }
 
-        if program_image.is_none() {
+        if program_image.is_none() && role != ProtectionDomainRole::Template {
             return Err(format!(
                 "Error: missing 'program_image' element on protection_domain: '{name}'"
             ));
@@ -786,7 +865,7 @@ impl ProtectionDomain {
             smc,
             cpu,
             domain,
-            program_image: program_image.unwrap(),
+            program_image,
             program_image_for_symbols,
             fpu,
             maps,

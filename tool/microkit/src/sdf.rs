@@ -50,7 +50,7 @@ pub(crate) use cspace::CapMapType;
 pub(crate) use iommu::IommuDeviceIdentifier;
 pub(crate) use irq::{SysIrq, SysIrqKind};
 pub(crate) use memory_region::{Map, SysMapPerms};
-pub(crate) use pd_vm::{CpuCore, SysSetVarKind};
+pub(crate) use pd_vm::{CpuCore, ProtectionDomainRole, SysSetVarKind};
 
 // Public re-exports
 pub use memory_region::{SysMemoryRegion, SysMemoryRegionPaddr};
@@ -179,7 +179,11 @@ pub fn parse(
         let child_name = child.tag_name();
         match child_name {
             "protection_domain" => root_pds.push(ProtectionDomain::from_xml(
-                config, &xml_sdf, &*child, false, &domains,
+                config,
+                &xml_sdf,
+                &*child,
+                ProtectionDomainRole::Normal,
+                &domains,
             )?),
             "channel" => channel_nodes.push(child),
             "memory_region" => mrs.push(SysMemoryRegion::from_xml(

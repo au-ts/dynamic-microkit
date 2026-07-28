@@ -188,6 +188,15 @@ Runnable PDs of the same priority are scheduled in a round-robin manner.
 
 **Passive** determines whether the PD is passive. A passive PD will have its scheduling context revoked after initialisation and then bound instead to the PD's notification object. This means the PD will be scheduled on receiving a notification, whereby it will run on the notification's scheduling context. When the PD receives a *protected procedure* by another PD or a *fault* caused by a child PD, the passive PD will run on the scheduling context of the callee.
 
+### Template
+
+A PD can be a *template*, which means it will be created without a program image. A template-pd is similar to other normal PDs, the primary differences between a template-pd and a normal PD are:
+- a template PD must be a child of a PD
+- a template PD should not have children, VMs, or program images declared at sdf
+- a template PD should always be initialised 'active', although its parent can have access to its scheduling context and is able to unbind the scheduling context from its thread dynamically
+
+The feature of template PD allows the users to load applications (e.g., an elf) into a PD dynamically.
+
 ## Virtual Machines {#vm}
 
 A *virtual machine* (VM) is a runtime abstraction for running guest operating systems in Microkit. It is similar
@@ -1003,6 +1012,7 @@ Additionally, it supports the following child elements:
 * `irq`: (zero or more) Describes hardware interrupt associations.
 * `setvar`: (zero or more) Describes variable rewriting.
 * `protection_domain`: (zero or more) Describes a child protection domain.
+* `template`: (zero or more) Describes a child template protection domain.
 * `virtual_machine`: (zero or one) Describes a child virtual machine.
 * `ioport`: (zero or more) Describes an I/O port, x86-64 only.
 * `cspace`: (zero or one) Describes ["extra" capabilities](#sdf-cspace) in the microkit-provided CSpace.
@@ -1070,6 +1080,17 @@ The `protection_domain` element has the same attributes as any other protection 
 * `setvar_id`: (optional) Specifies a symbol in the parent program image. This symbol will be rewritten with the ID of the child.
 
 On x86-64, a PD with a VCPU cannot have child PDs.
+
+The `template` element has the same elements as protection domains but not:
+
+* `program_image`: The template protection domains do not contain images by default.
+* `protection_domain`: A template protection domain should always be a child PD.
+* `template`: A template proetction domain cannot have child templates.
+* `virtual_machine`: A template protection domain cannot have virtual machines.
+
+It also has the same attributes as protection domains but not:
+
+* `setvar_id`: This attribute is valid only when a program image is given.
 
 The `virtual_machine` element has the following attribute:
 
