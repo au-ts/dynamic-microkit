@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW.
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+    <protection_domain name="x" >
+        <program_image path="x.elf" />
+        <template name="y" id="0" >
+            <program_image path="y.elf" />
+        </template>
+    </protection_domain>
+</system>
