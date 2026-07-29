@@ -765,6 +765,60 @@ mod protection_domain {
             "Error: cpu core must be less than 1, got 10 on element 'protection_domain':",
         )
     }
+
+    #[test]
+    fn test_template_has_image() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_image.system",
+            "Error: template PD cannot have any program image on element 'template':",
+        )
+    }
+
+    #[test]
+    fn test_template_has_child() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_child.system",
+            "Error: template PD cannot have child PDs on element 'template':",
+        )
+    }
+
+    #[test]
+    fn test_template_has_template() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_template.system",
+            "Error: a template cannot contain another template on element 'template':",
+        )
+    }
+
+    #[test]
+    fn test_template_has_vm() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_vm.system",
+            "Error: template PD cannot control virtual machine on element 'template':",
+        )
+    }
+
+    #[test]
+    fn test_template_without_id() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_without_id.system",
+            "Error: Missing required attribute 'id' on element 'template':",
+        )
+    }
+
+    #[test]
+    fn test_template_without_parent() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_without_parent.system",
+            "Error: invalid XML element 'template':",
+        )
+    }
 }
 
 #[cfg(test)]
