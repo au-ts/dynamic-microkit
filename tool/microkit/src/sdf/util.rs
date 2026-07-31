@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 //
 
-use super::{SdfLocation, SdfNode, SysSetVar, SystemDescriptionFile};
+use super::{ProtectionDomainRole, SdfLocation, SdfNode, SysSetVar, SystemDescriptionFile};
 
 /// The purpose of this function is to parse an integer that could
 /// either be in decimal or hex format, unlike the normal parsing
@@ -53,6 +53,22 @@ pub fn checked_add_setvar(
     }
 
     setvars.push(setvar);
+
+    Ok(())
+}
+
+pub fn ensure_setvar_allowed(
+    role: ProtectionDomainRole,
+    xml_sdf: &SystemDescriptionFile<'_>,
+    node: &dyn SdfNode,
+) -> Result<(), String> {
+    if role == ProtectionDomainRole::Template {
+        return Err(value_error(
+            xml_sdf,
+            node,
+            "template PD cannot have any setvars".to_string(),
+        ));
+    }
 
     Ok(())
 }

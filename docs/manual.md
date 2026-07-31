@@ -1087,10 +1087,11 @@ The `template` element has the same elements as protection domains but not:
 * `protection_domain`: A template protection domain should always be a child PD.
 * `template`: A template proetction domain cannot have child templates.
 * `virtual_machine`: A template protection domain cannot have virtual machines.
+* `setvar`: A template protection domain cannot have any setvar due to the lack of image.
 
 It also has the same attributes as protection domains but not:
-
 * `setvar_id`: This attribute is valid only when a program image is given.
+Also, any child element cannot have `setvars` for the same purpose of not having program image.
 
 The `virtual_machine` element has the following attribute:
 

@@ -803,6 +803,24 @@ mod protection_domain {
     }
 
     #[test]
+    fn test_template_has_element_with_setvar() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_element_with_setvar.system",
+            "Error: template PD cannot have any setvars on element 'map':",
+        )
+    }
+
+    #[test]
+    fn test_template_has_setvars() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_template_has_setvars.system",
+            "Error: template PD cannot have any setvars on element 'setvar':",
+        )
+    }
+
+    #[test]
     fn test_template_without_id() {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
