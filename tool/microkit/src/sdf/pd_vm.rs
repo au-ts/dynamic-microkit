@@ -16,7 +16,8 @@ use super::irq::{SysIrq, SysIrqKind};
 use super::memory_region::SysMap;
 use super::pci::PciDevice;
 use super::util::{
-    check_attributes, checked_add_setvar, checked_lookup, loc_string, sdf_parse_number, value_error,
+    check_attributes, checked_add_setvar, checked_lookup, ensure_setvar_allowed, loc_string,
+    sdf_parse_number, value_error,
 };
 use super::{SdfLocation, SdfNode, SystemDescriptionFile};
 
@@ -67,7 +68,7 @@ pub struct SysSetVar {
     pub kind: SysSetVarKind,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProtectionDomainRole {
     Normal,
     Child,
@@ -406,6 +407,7 @@ impl ProtectionDomain {
                     let map = SysMap::from_xml(xml_sdf, &*child, true, map_max_vaddr)?;
 
                     if let Some(setvar_vaddr) = child.attribute("setvar_vaddr") {
+                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_vaddr.to_string(),
                             kind: SysSetVarKind::Vaddr { address: map.vaddr },
@@ -414,6 +416,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_size) = child.attribute("setvar_size") {
+                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_size.to_string(),
                             kind: SysSetVarKind::Size { mr: map.mr.clone() },
@@ -422,6 +425,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_prefill_size) = child.attribute("setvar_prefill_size") {
+                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_prefill_size.to_string(),
                             kind: SysSetVarKind::PrefillSize { mr: map.mr.clone() },
@@ -447,6 +451,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_id) = child.attribute("setvar_id") {
+                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_id.to_string(),
                             kind: SysSetVarKind::Id { id: id as u64 },
@@ -679,6 +684,7 @@ impl ProtectionDomain {
                         }
 
                         if let Some(setvar_id) = child.attribute("setvar_id") {
+                            ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                             let setvar = SysSetVar {
                                 symbol: setvar_id.to_string(),
                                 kind: SysSetVarKind::Id { id: id as u64 },
@@ -690,6 +696,7 @@ impl ProtectionDomain {
                             sdf_parse_number(checked_lookup(xml_sdf, &*child, "addr")?, &*child)?;
 
                         if let Some(setvar_addr) = child.attribute("setvar_addr") {
+                            ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                             let setvar = SysSetVar {
                                 symbol: setvar_addr.to_string(),
                                 kind: SysSetVarKind::X86IoPortAddr { address: addr },
@@ -723,6 +730,7 @@ impl ProtectionDomain {
                     }
                 }
                 "setvar" => {
+                    ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                     check_attributes(xml_sdf, &*child, &["symbol", "region_paddr"])?;
                     let symbol = checked_lookup(xml_sdf, &*child, "symbol")?.to_string();
                     let region = checked_lookup(xml_sdf, &*child, "region_paddr")?.to_string();
@@ -753,6 +761,7 @@ impl ProtectionDomain {
                     )?;
 
                     if let Some(setvar_id) = child_pd.setvar_id.clone() {
+                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_id.to_string(),
                             kind: SysSetVarKind::Id {
