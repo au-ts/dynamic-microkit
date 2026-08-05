@@ -92,6 +92,7 @@ impl AddressSpace {
         frame_cap: Cap,
         frame_size_bytes: u64,
         addr: u64,
+        delegated: bool,
     ) -> Result<(), String> {
         self.map_recursive(
             spec_container,
@@ -101,6 +102,7 @@ impl AddressSpace {
             frame_cap,
             frame_size_bytes,
             addr,
+            delegated,
         )
     }
 
@@ -192,6 +194,7 @@ impl AddressSpace {
         frame_cap: Cap,
         frame_size_bytes: u64,
         addr: u64,
+        delegated: bool,
     ) -> Result<(), String> {
         if cur_level >= self.address_space_levels(sel4_config) {
             unreachable!("internal bug: recursed past the final address-space level");
@@ -201,14 +204,18 @@ impl AddressSpace {
         let leaf_level = self.get_leaf_level(sel4_config, frame_size_bytes);
 
         if cur_level == leaf_level {
-            self.insert_cap_into_level(
-                spec_container,
-                sel4_config,
-                cur_level_obj_id,
-                cur_level,
-                slot,
-                frame_cap,
-            )
+            if !delegated {
+                self.insert_cap_into_level(
+                    spec_container,
+                    sel4_config,
+                    cur_level_obj_id,
+                    cur_level,
+                    slot,
+                    frame_cap,
+                )
+            } else {
+                Ok(())
+            }
         } else {
             let next_obj_id = self.map_intermediary_level_helper(
                 spec_container,
@@ -226,6 +233,7 @@ impl AddressSpace {
                 frame_cap,
                 frame_size_bytes,
                 addr,
+                delegated,
             )
         }
     }

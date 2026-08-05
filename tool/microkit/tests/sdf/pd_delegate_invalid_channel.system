@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+
+    <protection_domain name="loader" priority="25" delegatee="false" >
+        <program_image path="loader.elf" />
+        <template name="loadee" id="0" priority="20">
+        </template>
+    </protection_domain>
+
+    <protection_domain name="server" priority="25" >
+        <program_image path="server.elf" />
+    </protection_domain>
+
+    <channel>
+        <end pd="server" id="0" />
+        <end pd="loadee" id="0" delegated="true" />
+    </channel>
+
+</system>
