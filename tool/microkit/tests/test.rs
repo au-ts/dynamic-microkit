@@ -782,6 +782,60 @@ mod protection_domain {
     }
 
     #[test]
+    fn test_delegate_without_delegatee() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_without_delegatee.system",
+            "Error: 'delegated' is not allowed within this PD on element 'map':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_invalid_map() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_invalid_map.system",
+            "Error: 'delegated' is not allowed within this PD on element 'map':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_child_as_delegatee() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_child_as_delegatee.system",
+            "Error: A child/template PD cannot be a delegatee on element 'protection_domain':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_invalid_channel() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_invalid_channel.system",
+            "Error: 'delegated' is not allowed within this PD on element 'end':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_invalid_irq() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_invalid_irq.system",
+            "Error: 'Delegated' is not allowed within this PD on element 'irq':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_invalid_ioport() {
+        check_error(
+            &DEFAULT_X86_64_KERNEL_CONFIG,
+            "pd_delegate_invalid_ioport.system",
+            "Error: 'delegated' is not allowed within this PD on element 'ioport':",
+        )
+    }
+
+    #[test]
     fn test_template_has_image() {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,

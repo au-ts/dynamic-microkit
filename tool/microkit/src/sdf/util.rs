@@ -89,6 +89,22 @@ pub fn ensure_setvar_allowed(
     Ok(())
 }
 
+pub fn ensure_delegation_allowed(
+    allow_delegation: bool,
+    xml_sdf: &SystemDescriptionFile<'_>,
+    node: &dyn SdfNode,
+) -> Result<(), String> {
+    if !allow_delegation {
+        return Err(value_error(
+            xml_sdf,
+            node,
+            "'delegated' is not allowed within this PD".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn check_no_text(
     xml_sdf: &SystemDescriptionFile,
     node: &roxmltree::Node,

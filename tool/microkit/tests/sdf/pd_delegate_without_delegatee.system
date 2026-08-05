@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+    <memory_region name="mr0" size="0x40000" />
+
+    <protection_domain name="loader" priority="25" >
+        <program_image path="loader.elf" />
+        <map mr="mr0" vaddr="0xC00000" perms="rw" cached="true" delegated="true" />
+    </protection_domain>
+</system>

@@ -50,6 +50,7 @@ pub struct SysMap {
     pub vaddr: u64,
     pub perms: u8,
     pub cached: bool,
+    pub delegated: bool,
     /// Location in the parsed SDF file. Because this struct is
     /// used in a non-XML context, we make the position optional.
     pub text_pos: Option<SdfLocation>,
@@ -66,6 +67,7 @@ pub trait Map {
     fn write(&self) -> bool;
     fn execute(&self) -> bool;
     fn cached(&self) -> bool;
+    fn delegated(&self) -> bool;
 }
 
 impl Map for SysMap {
@@ -108,6 +110,10 @@ impl Map for SysMap {
     fn cached(&self) -> bool {
         self.cached
     }
+
+    fn delegated(&self) -> bool {
+        self.delegated
+    }
 }
 
 impl Map for SysIOMap {
@@ -148,6 +154,10 @@ impl Map for SysIOMap {
     }
 
     fn cached(&self) -> bool {
+        false
+    }
+
+    fn delegated(&self) -> bool {
         false
     }
 }
@@ -258,6 +268,7 @@ impl SysMap {
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
         allow_setvar: bool,
+        allow_delegation: bool,
         max_vaddr: u64,
     ) -> Result<SysMap, String> {
         let mut attrs = vec!["mr", "vaddr", "perms", "cached"];
@@ -265,6 +276,9 @@ impl SysMap {
             attrs.push("setvar_vaddr");
             attrs.push("setvar_size");
             attrs.push("setvar_prefill_size");
+        }
+        if allow_delegation {
+            attrs.push("delegated");
         }
         check_attributes(xml_sdf, node, &attrs)?;
 
@@ -320,11 +334,27 @@ impl SysMap {
             true
         };
 
+        let delegated = if let Some(xml_delegated) = node.attribute("delegated") {
+            match str_to_bool(xml_delegated) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "delegated must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
+        };
+
         Ok(SysMap {
             mr,
             vaddr,
             perms,
             cached,
+            delegated,
             text_pos: Some(node.range().start),
         })
     }

@@ -45,6 +45,7 @@ impl CapMap {
         cap_type: CapMapType,
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
+        acpt_delegators: bool,
     ) -> Result<CapMap, String> {
         // At the moment the four cap maps we support all have the 'pd' element,
         // so we can include it here. When that stops being the case we will
@@ -70,6 +71,18 @@ impl CapMap {
                 node,
                 format!("There are only {CAP_MAP_MAX_SLOT} destination cspace slots available."),
             ));
+        } else if slot >= PD_ROOT_CAP_SLOT_RSVD_START && acpt_delegators {
+            return Err(value_error(
+                xml_sdf,
+                node,
+                format!(
+                    "slot {} overlaps with the final {} slots ({}...{}), which are reserved for delegators",
+                    slot,
+                    PD_ROOT_CAP_SLOT_RSVD,
+                    PD_ROOT_CAP_SLOT_RSVD_START,
+                    CAP_MAP_MAX_SLOT - 1,
+                ),
+            ));
         }
 
         Ok(CapMap {
@@ -87,6 +100,7 @@ impl CSpace {
     pub(super) fn from_xml(
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
+        acpt_delegators: bool,
     ) -> Result<Self, String> {
         check_attributes(xml_sdf, node, &[])?;
 
@@ -94,9 +108,9 @@ impl CSpace {
 
         for child in node.children() {
             cap_maps.push(match child.tag_name() {
-                "cap_tcb" => CapMap::from_xml(CapMapType::Tcb, xml_sdf, &*child)?,
-                "cap_sc" => CapMap::from_xml(CapMapType::Sc, xml_sdf, &*child)?,
-                "cap_vspace" => CapMap::from_xml(CapMapType::VSpace, xml_sdf, &*child)?,
+                "cap_tcb" => CapMap::from_xml(CapMapType::Tcb, xml_sdf, &*child, acpt_delegators)?,
+                "cap_sc" => CapMap::from_xml(CapMapType::Sc, xml_sdf, &*child, acpt_delegators)?,
+                "cap_vspace" => CapMap::from_xml(CapMapType::VSpace, xml_sdf, &*child, acpt_delegators)?,
                 child_name => {
                     let location = loc_string(xml_sdf, child.range().start);
                     if let Some(type_name) = child_name.strip_prefix("cap_") {
