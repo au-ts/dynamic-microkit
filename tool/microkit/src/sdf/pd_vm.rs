@@ -41,6 +41,12 @@ pub struct SchedulingParams {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct SysIrqPlaceholder {
+    pub id: u64,
+    pub text_pos: SdfLocation,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct IOPort {
     pub id: u64,
     pub addr: u64,
@@ -84,6 +90,7 @@ pub struct ProtectionDomain {
     pub fpu: bool,
     pub maps: Vec<SysMap>,
     pub irqs: Vec<SysIrq>,
+    pub irq_placeholders: Vec<SysIrqPlaceholder>,
     pub ioports: Vec<IOPort>,
     pub setvars: Vec<SysSetVar>,
     pub cap_maps: Vec<CapMap>,
@@ -115,6 +122,10 @@ impl ProtectionDomain {
         let mut irqs = 0;
         for irq in &self.irqs {
             irqs |= 1 << irq.id;
+        }
+
+        for irq_placeholder in &self.irq_placeholders {
+            irqs |= 1 << irq_placeholder.id;
         }
 
         irqs
@@ -306,6 +317,7 @@ impl ProtectionDomain {
 
         let mut maps = Vec::new();
         let mut irqs = Vec::new();
+        let mut irq_placeholders = Vec::new();
         let mut ioports = Vec::new();
         let mut setvars: Vec<SysSetVar> = Vec::new();
         let mut child_pds = Vec::new();
@@ -615,6 +627,36 @@ impl ProtectionDomain {
                         };
                     }
                 }
+                "irq_placeholder" => {
+                    check_attributes(
+                        xml_sdf,
+                        &*child,
+                        &["id"],
+                    )?;
+
+                    let id = checked_lookup(xml_sdf, &*child, "id")?
+                        .parse::<i64>()
+                        .unwrap();
+                    if id > PD_MAX_ID as i64 {
+                        return Err(value_error(
+                            xml_sdf,
+                            &*child,
+                            format!("id must be < {}", PD_MAX_ID + 1),
+                        ));
+                    }
+                    if id < 0 {
+                        return Err(value_error(
+                            xml_sdf,
+                            &*child,
+                            "id must be >= 0".to_string(),
+                        ));
+                    }
+
+                    irq_placeholders.push(SysIrqPlaceholder {
+                        id: id as u64,
+                        text_pos: node.range().start,
+                    })
+                }
                 "ioport" => {
                     if let Arch::X86_64 = config.arch {
                         check_attributes(
@@ -791,6 +833,7 @@ impl ProtectionDomain {
             fpu,
             maps,
             irqs,
+            irq_placeholders,
             ioports,
             setvars,
             cap_maps: cspace.map(|cspace| cspace.cap_maps).unwrap_or_default(),

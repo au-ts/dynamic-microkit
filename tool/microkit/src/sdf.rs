@@ -388,6 +388,20 @@ pub fn parse(
             }
             ch_ids[pd_idx].push(sysirq.id);
         }
+
+        for irq_placeholder in &pd.irq_placeholders {
+            if ch_ids[pd_idx].contains(&irq_placeholder.id) {
+                return Err(format!(
+                    "Error: duplicate channel id: {} in protection domain: '{}' @ {}:{}:{}",
+                    irq_placeholder.id,
+                    pd.name,
+                    filename.display(),
+                    pd.text_pos.unwrap().row,
+                    pd.text_pos.unwrap().col
+                ));
+            }
+            ch_ids[pd_idx].push(irq_placeholder.id);
+        }
     }
 
     for ch in &channels {
