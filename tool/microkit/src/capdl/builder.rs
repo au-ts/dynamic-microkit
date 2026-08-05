@@ -1178,6 +1178,15 @@ pub fn build_capdl_spec(
             kernel_config.cap_address_bits - PD_CAP_BITS as u64 - PD_ROOT_CAP_BITS as u64;
         let pd_cnode_cap = capdl_util_make_cnode_cap(pd_cnode_obj_id, 0, pd_guard_size as u8);
 
+        // Place a self-ref cap at slot 0
+        let cnode_cap_self_ref = capdl_util_make_cnode_cap(pd_cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
+        capdl_util_insert_cap_into_cspace(
+            &mut spec_container,
+            pd_cnode_obj_id,
+            0,
+            cnode_cap_self_ref,
+        );
+
         let pd_root_cnode_obj_id = capdl_util_make_cnode_obj(
             &mut spec_container,
             &(pd.name.clone() + "_root"),
@@ -1520,7 +1529,7 @@ pub fn build_capdl_spec(
                             let guard_size =
                                 kernel_config.cap_address_bits as u8 - PD_ROOT_CAP_BITS - PD_CAP_BITS;
 
-                            capdl_util_make_cnode_cap(pd_src_shadow_cspace.cspace, 0, guard_size)
+                            capdl_util_make_cnode_cap(pd_src_shadow_cspace.microkit_cnode, 0, guard_size)
                         }
                         _ => return Err("internal bug: invalid cap source type".to_string())
                     }
