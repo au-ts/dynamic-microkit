@@ -35,6 +35,7 @@ pub enum SysIrqKind {
 pub struct SysIrq {
     pub id: u64,
     pub kind: SysIrqKind,
+    pub delegated: bool,
 }
 
 impl SysIrq {
