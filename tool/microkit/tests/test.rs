@@ -1644,7 +1644,7 @@ mod system {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_cap_mappings_src_not_specified.system",
-            "Error: Either 'pd' or 'cnode_name' should be specified on element 'cap_cspace'"
+            "Error: Either 'pd' or 'cnode_name' should be specified on element 'cap_cspace'",
         )
     }
 
@@ -1680,7 +1680,7 @@ mod system {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_cap_mappings_invalid_cnode_ref.system",
-            "Error: unknown CNode name 'invalid': pd_cap_mappings_invalid_cnode_ref.system:12:13"
+            "Error: unknown CNode name 'invalid': pd_cap_mappings_invalid_cnode_ref.system:12:13",
         )
     }
 }

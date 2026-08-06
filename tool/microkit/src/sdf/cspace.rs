@@ -18,7 +18,7 @@ pub struct CNode {
 }
 
 impl CNode {
-    pub(super) fn from_xml(xml_sdf: &XmlSystemDescription, node: &dyn SdfNode) -> Result<CNode, String> {
+    pub(super) fn from_xml(xml_sdf: &SystemDescriptionFile, node: &dyn SdfNode) -> Result<CNode, String> {
         check_attributes(xml_sdf, node, &["name", "size_bits", "post_capdl_untypeds"])?;
 
         let name = checked_lookup(xml_sdf, node, "name")?.to_string();
@@ -99,7 +99,7 @@ impl CapMap {
                     return Err(value_error(
                         xml_sdf,
                         node,
-                        format!("invalid parameter 'pd' for target CapMapType"),
+                        "invalid parameter 'pd' for target CapMapType".to_string(),
                     ))
                 }
 
@@ -110,7 +110,7 @@ impl CapMap {
                     return Err(value_error(
                         xml_sdf,
                         node,
-                        format!("invalid parameter 'cnode_name' for target CapMapType"),
+                        "invalid parameter 'cnode_name' for target CapMapType".to_string(),
                     ))
                 }
 
@@ -119,12 +119,12 @@ impl CapMap {
             (Some(_), Some(_)) => return Err(value_error(
                 xml_sdf,
                 node,
-                format!("'pd' and 'cnode_name' cannot be both specified"),
+                "'pd' and 'cnode_name' cannot be both specified".to_string(),
             )),
             (None, None) => return Err(value_error(
                 xml_sdf,
                 node,
-                format!("Either 'pd' or 'cnode_name' should be specified"),
+                "Either 'pd' or 'cnode_name' should be specified".to_string(),
             )),
         };
 
