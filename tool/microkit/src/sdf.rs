@@ -270,7 +270,7 @@ pub fn parse(
         for cap_map in pd.cap_maps.iter() {
             match &cap_map.source {
                 CapMapSource::Pd(source_name) => {
-                    if !pd_names.contains(&source_name) {
+                    if !pd_names.contains(source_name) {
                         return Err(format!(
                             "Error: unknown PD name '{}': {}",
                             source_name,
@@ -279,7 +279,7 @@ pub fn parse(
                     }
                 }
                 CapMapSource::CNode(source_name) => {
-                    if !cnode_names.contains(&source_name) {
+                    if !cnode_names.contains(source_name) {
                         return Err(format!(
                             "Error: unknown CNode name '{}': {}",
                             source_name,
