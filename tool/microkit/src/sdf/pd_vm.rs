@@ -765,11 +765,7 @@ impl ProtectionDomain {
                     }
                 }
                 "irq_placeholder" => {
-                    check_attributes(
-                        xml_sdf,
-                        &*child,
-                        &["id"],
-                    )?;
+                    check_attributes(xml_sdf, &*child, &["id"])?;
 
                     let id = checked_lookup(xml_sdf, &*child, "id")?
                         .parse::<i64>()
@@ -782,11 +778,7 @@ impl ProtectionDomain {
                         ));
                     }
                     if id < 0 {
-                        return Err(value_error(
-                            xml_sdf,
-                            &*child,
-                            "id must be >= 0".to_string(),
-                        ));
+                        return Err(value_error(xml_sdf, &*child, "id must be >= 0".to_string()));
                     }
 
                     irq_placeholders.push(SysIrqPlaceholder {
