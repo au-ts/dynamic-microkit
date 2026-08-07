@@ -18,25 +18,29 @@ pub struct CNode {
 }
 
 impl CNode {
-    pub(super) fn from_xml(xml_sdf: &SystemDescriptionFile, node: &dyn SdfNode) -> Result<CNode, String> {
+    pub(super) fn from_xml(
+        xml_sdf: &SystemDescriptionFile,
+        node: &dyn SdfNode,
+    ) -> Result<CNode, String> {
         check_attributes(xml_sdf, node, &["name", "size_bits", "post_capdl_untypeds"])?;
 
         let name = checked_lookup(xml_sdf, node, "name")?.to_string();
 
-        let post_capdl_untypeds = if let Some(xml_post_capdl_untypeds) = node.attribute("post_capdl_untypeds") {
-            match str_to_bool(xml_post_capdl_untypeds) {
-                Some(val) => val,
-                None => {
-                    return Err(value_error(
-                        xml_sdf,
-                        node,
-                        "post_capdl_untypeds must be 'true' or 'false'".to_string(),
-                    ))
+        let post_capdl_untypeds =
+            if let Some(xml_post_capdl_untypeds) = node.attribute("post_capdl_untypeds") {
+                match str_to_bool(xml_post_capdl_untypeds) {
+                    Some(val) => val,
+                    None => {
+                        return Err(value_error(
+                            xml_sdf,
+                            node,
+                            "post_capdl_untypeds must be 'true' or 'false'".to_string(),
+                        ))
+                    }
                 }
-            }
-        } else {
-            false
-        };
+            } else {
+                false
+            };
 
         let size_bits = sdf_parse_number(checked_lookup(xml_sdf, node, "size_bits")?, node)? as u8;
 
@@ -49,7 +53,7 @@ impl CNode {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum CapMapSource{
+pub enum CapMapSource {
     Pd(String),
     CNode(String),
 }
@@ -89,9 +93,13 @@ impl CapMap {
     ) -> Result<CapMap, String> {
         check_attributes(xml_sdf, node, &["slot", "pd", "cnode_name"])?;
 
-        let pd_name_maybe = node.attribute("pd").map(|pd_name_str| pd_name_str.to_string());
+        let pd_name_maybe = node
+            .attribute("pd")
+            .map(|pd_name_str| pd_name_str.to_string());
 
-        let cnode_name_maybe = node.attribute("cnode_name").map(|cnode_name_str| cnode_name_str.to_string());
+        let cnode_name_maybe = node
+            .attribute("cnode_name")
+            .map(|cnode_name_str| cnode_name_str.to_string());
 
         let source = match (pd_name_maybe, cnode_name_maybe) {
             (Some(pd_name), None) => {
@@ -100,32 +108,36 @@ impl CapMap {
                         xml_sdf,
                         node,
                         "invalid parameter 'pd' for target CapMapType".to_string(),
-                    ))
+                    ));
                 }
 
                 CapMapSource::Pd(pd_name)
-            },
+            }
             (None, Some(cnode_name)) => {
                 if cap_type != CapMapType::CNode {
                     return Err(value_error(
                         xml_sdf,
                         node,
                         "invalid parameter 'cnode_name' for target CapMapType".to_string(),
-                    ))
+                    ));
                 }
 
                 CapMapSource::CNode(cnode_name)
-            },
-            (Some(_), Some(_)) => return Err(value_error(
-                xml_sdf,
-                node,
-                "'pd' and 'cnode_name' cannot be both specified".to_string(),
-            )),
-            (None, None) => return Err(value_error(
-                xml_sdf,
-                node,
-                "Either 'pd' or 'cnode_name' should be specified".to_string(),
-            )),
+            }
+            (Some(_), Some(_)) => {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "'pd' and 'cnode_name' cannot be both specified".to_string(),
+                ))
+            }
+            (None, None) => {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "Either 'pd' or 'cnode_name' should be specified".to_string(),
+                ))
+            }
         };
 
         let slot = sdf_parse_number(checked_lookup(xml_sdf, node, "slot")?, node)?;
@@ -165,7 +177,6 @@ impl CapMap {
             slot,
             text_pos: node.range().start,
         })
-
     }
 }
 

@@ -46,9 +46,9 @@ use util::*;
 
 // Internal re-exports
 pub(crate) use consts::*;
-pub(crate) use cspace::CapMapType;
 pub(crate) use cspace::CNode;
 pub(crate) use cspace::CapMapSource;
+pub(crate) use cspace::CapMapType;
 pub(crate) use iommu::IommuDeviceIdentifier;
 pub(crate) use irq::{SysIrq, SysIrqKind};
 pub(crate) use memory_region::{Map, SysMapPerms};

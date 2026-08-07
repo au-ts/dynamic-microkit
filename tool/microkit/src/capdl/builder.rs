@@ -24,7 +24,7 @@ use crate::{
     },
     elf::ElfFile,
     sdf::{
-        CapMapType, CapMapSource, CpuCore, Map, SystemDescription, BUDGET_DEFAULT, MONITOR_DOMAIN,
+        CapMapSource, CapMapType, CpuCore, Map, SystemDescription, BUDGET_DEFAULT, MONITOR_DOMAIN,
         MONITOR_PD_NAME, MONITOR_PRIORITY,
     },
     sel4::{Arch, Config, PageSize},
@@ -659,14 +659,11 @@ pub fn build_capdl_spec(
         );
 
         // Have a cap at slot 0 pointing to itself
-        let pd_guard_size = kernel_config.cap_address_bits - cnode.size_bits as u64 - PD_ROOT_CAP_BITS as u64;
-        let cnode_cap_self_ref = capdl_util_make_cnode_cap(cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
-        capdl_util_insert_cap_into_cspace(
-            &mut spec_container,
-            cnode_obj_id,
-            0,
-            cnode_cap_self_ref,
-        );
+        let pd_guard_size =
+            kernel_config.cap_address_bits - cnode.size_bits as u64 - PD_ROOT_CAP_BITS as u64;
+        let cnode_cap_self_ref =
+            capdl_util_make_cnode_cap(cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
+        capdl_util_insert_cap_into_cspace(&mut spec_container, cnode_obj_id, 0, cnode_cap_self_ref);
 
         user_cnodes.insert(cnode.name.clone(), (cnode_obj_id, cnode.size_bits));
     }
@@ -1179,7 +1176,8 @@ pub fn build_capdl_spec(
         let pd_cnode_cap = capdl_util_make_cnode_cap(pd_cnode_obj_id, 0, pd_guard_size as u8);
 
         // Place a self-ref cap at slot 0
-        let cnode_cap_self_ref = capdl_util_make_cnode_cap(pd_cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
+        let cnode_cap_self_ref =
+            capdl_util_make_cnode_cap(pd_cnode_obj_id, 0, pd_guard_size.try_into().unwrap());
         capdl_util_insert_cap_into_cspace(
             &mut spec_container,
             pd_cnode_obj_id,
@@ -1515,7 +1513,6 @@ pub fn build_capdl_spec(
     // *********************************
     for (pd_dest_idx, pd) in system.protection_domains.iter().enumerate() {
         for cap_map in pd.cap_maps.iter() {
-
             let cap_map_obj = match &cap_map.source {
                 CapMapSource::Pd(source_name) => {
                     let pd_src_shadow_cspace_id = &pd_shadow_cspaces_name_to_id[source_name];
@@ -1523,23 +1520,35 @@ pub fn build_capdl_spec(
 
                     match cap_map.cap_type {
                         CapMapType::Tcb => capdl_util_make_tcb_cap(pd_src_shadow_cspace.tcb),
-                        CapMapType::Sc => capdl_util_make_sc_cap(pd_src_shadow_cspace.sched_context),
-                        CapMapType::VSpace => capdl_util_make_page_table_cap(pd_src_shadow_cspace.vspace),
-                        CapMapType::CSpace => {
-                            let guard_size =
-                                kernel_config.cap_address_bits as u8 - PD_ROOT_CAP_BITS - PD_CAP_BITS;
-
-                            capdl_util_make_cnode_cap(pd_src_shadow_cspace.microkit_cnode, 0, guard_size)
+                        CapMapType::Sc => {
+                            capdl_util_make_sc_cap(pd_src_shadow_cspace.sched_context)
                         }
-                        _ => return Err("internal bug: invalid cap source type".to_string())
+                        CapMapType::VSpace => {
+                            capdl_util_make_page_table_cap(pd_src_shadow_cspace.vspace)
+                        }
+                        CapMapType::CSpace => {
+                            let guard_size = kernel_config.cap_address_bits as u8
+                                - PD_ROOT_CAP_BITS
+                                - PD_CAP_BITS;
+
+                            capdl_util_make_cnode_cap(
+                                pd_src_shadow_cspace.microkit_cnode,
+                                0,
+                                guard_size,
+                            )
+                        }
+                        _ => return Err("internal bug: invalid cap source type".to_string()),
                     }
                 }
                 CapMapSource::CNode(source_name) => {
                     if let Some((cnode_obj_id, size_bits)) = user_cnodes.get(source_name) {
-                        let pd_guard_size = kernel_config.cap_address_bits as u8 - *size_bits - PD_ROOT_CAP_BITS;
+                        let pd_guard_size =
+                            kernel_config.cap_address_bits as u8 - *size_bits - PD_ROOT_CAP_BITS;
                         capdl_util_make_cnode_cap(*cnode_obj_id, 0, pd_guard_size)
                     } else {
-                        return Err(format!("internal bug: couldn't find CNode with given name '{source_name}'."));
+                        return Err(format!(
+                            "internal bug: couldn't find CNode with given name '{source_name}'."
+                        ));
                     }
                 }
             };
