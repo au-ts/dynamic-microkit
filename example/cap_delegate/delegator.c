@@ -14,6 +14,25 @@
 
 typedef void (*entry_t)(void);
 
+#define DELEGATED_MR_VADDR 0xC00000
+
+static void delegated_mr_test(void)
+{
+    volatile seL4_Word *mr = (volatile seL4_Word *)DELEGATED_MR_VADDR;
+
+    microkit_dbg_puts("<delegator> access delegated MR\n");
+
+    // This store should fault the first time.
+    //
+    // The delegatee maps the delegated frame and replies to the fault.
+    // The instruction is then restarted and this store succeeds.
+    *mr = 0x12345678;
+
+    microkit_dbg_puts("<delegator> delegated MR mapped, value: ");
+    puthex64(*mr);
+    microkit_dbg_puts("\n");
+}
+
 static void delegation_restore_cap(seL4_Word slot)
 {
     microkit_dbg_puts("<delegator> restore cap: ");
@@ -216,4 +235,6 @@ void notified(microkit_channel ch)
     microkit_dbg_puts("<delegator>::notified: received signal from delegatee\n");
     microkit_dbg_puts("<delegator>::notified: try notifying server\n");
     microkit_notify(CH_SERVER);
+
+    delegated_mr_test();
 }
