@@ -11,6 +11,43 @@
 #define CPTR_DGT_CND \
     (microkit_cspace_root_slot_to_cptr(48))
 
+#define CHILD_DELEGATOR ((microkit_child)0)
+
+#define DELEGATED_MR_VADDR 0xC00000
+#define DELEGATED_MR_SIZE  0x1000
+
+static seL4_Error map_delegated_page(seL4_CPtr frame, seL4_CPtr vspace, seL4_Word vaddr)
+{
+#if defined(CONFIG_ARCH_AARCH64)
+    return seL4_ARM_Page_Map(
+        frame,
+        vspace,
+        vaddr,
+        seL4_ReadWrite,
+        seL4_ARM_Default_VMAttributes
+    );
+#elif defined(CONFIG_ARCH_RISCV)
+    return seL4_RISCV_Page_Map(
+        frame,
+        vspace,
+        vaddr,
+        seL4_ReadWrite,
+        seL4_RISCV_Default_VMAttributes
+    );
+#elif defined(CONFIG_ARCH_X86_64)
+    return seL4_X86_Page_Map(
+        frame,
+        vspace,
+        vaddr,
+        seL4_ReadWrite,
+        seL4_X86_Default_VMAttributes
+    );
+#else
+#error "Unsupported architecture"
+#endif
+}
+
+
 void init(void)
 {
     microkit_dbg_puts("[delegatee] init\n");
@@ -117,4 +154,66 @@ seL4_MessageInfo_t protected(microkit_channel ch, microkit_msginfo msginfo)
     }
 
     return microkit_msginfo_new(0, 0);
+}
+
+seL4_Bool fault(microkit_child child, microkit_msginfo msginfo, microkit_msginfo *reply_msginfo)
+{
+    seL4_Word label = microkit_msginfo_get_label(msginfo);
+
+    microkit_dbg_puts("[delegatee] fault from child ");
+    microkit_dbg_put32(child);
+    microkit_dbg_puts("\n");
+
+    if (child != CHILD_DELEGATOR) {
+        microkit_dbg_puts("[delegatee] unexpected child\n");
+        return seL4_False;
+    }
+
+    if (label != seL4_Fault_VMFault) {
+        microkit_dbg_puts("[delegatee] unexpected fault type\n");
+        return seL4_False;
+    }
+
+    seL4_Word fault_addr = seL4_GetMR(seL4_VMFault_Addr);
+
+    microkit_dbg_puts("[delegatee] VM fault address: ");
+    puthex64(fault_addr);
+    microkit_dbg_puts("\n");
+
+    if (fault_addr < DELEGATED_MR_VADDR ||
+        fault_addr >= DELEGATED_MR_VADDR + DELEGATED_MR_SIZE) {
+        microkit_dbg_puts("[delegatee] fault outside delegated MR\n");
+        return seL4_False;
+    }
+
+    // delegation CNode[4] -> delegator VSpace
+    seL4_CPtr vspace =
+        DGT_CPTR__DGTR_VSPACE(CPTR_DGT_CND);
+
+    // delegation CNode[138] -> first frame of delegated MR
+    seL4_CPtr frame =
+        DGT_CPTR__MR_FRAME(CPTR_DGT_CND, 0);
+
+    microkit_dbg_puts("[delegatee] map delegated frame\n");
+
+    seL4_Error err = map_delegated_page(
+        frame,
+        vspace,
+        DELEGATED_MR_VADDR
+    );
+
+    if (err != seL4_NoError) {
+        microkit_dbg_puts("[delegatee] Page_Map failed: ");
+        microkit_dbg_put32(err);
+        microkit_dbg_puts("\n");
+        return seL4_False;
+    }
+
+    microkit_dbg_puts("[delegatee] delegated MR mapped\n");
+
+    *reply_msginfo = microkit_msginfo_new(0, 0);
+
+    // Reply to the fault. The delegator resumes from the fault restart PC,
+    // so the faulting memory access is retried.
+    return seL4_True;
 }

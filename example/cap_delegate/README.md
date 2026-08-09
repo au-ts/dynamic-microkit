@@ -428,4 +428,10 @@ MON|INFO: Microkit Monitor started!
 <delegator>::notified: received signal from delegatee
 <delegator>::notified: try notifying server
 <<seL4(CPU 0) [decodeInvocation/643 T0x80602e2800 "delegator" @200398]: Attempted to invoke a null cap #10.>>
+<delegator> access delegated MR
+[delegatee] fault from child 0
+[delegatee] VM fault address: 0x0000000000c00000
+[delegatee] map delegated frame
+[delegatee] delegated MR mapped
+<delegator> delegated MR mapped, value: 0x0000000012345678
 ```
