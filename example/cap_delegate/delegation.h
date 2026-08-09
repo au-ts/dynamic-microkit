@@ -28,6 +28,16 @@
 #define DELEGATION_SLOT_MICROKIT_CNODE 1
 #define DELEGATION_SLOT_ROOT_CNODE     2
 #define DELEGATION_SLOT_GRANT_CAP      3
+#define DELEGATION_SLOT_VSPACE         4
+
+// Must match DLG_MR_CAP in builder.rs.
+#define DELEGATION_BASE_MR_CAP (10 + 64 + 64)
+
+#define DGT_CPTR__DGTR_VSPACE(CPTR_DGT_CND) \
+    ((CPTR_DGT_CND) | DELEGATION_SLOT_VSPACE)
+
+#define DGT_CPTR__MR_FRAME(CPTR_DGT_CND, IDX) \
+    ((CPTR_DGT_CND) | (DELEGATION_BASE_MR_CAP + (IDX)))
 
 // Delegator PD's Microkit CNode, accessible through the delegation CNode.
 #define DGT_CPTR__DGTR_MK_CND(CPTR_DGT_CND) \
@@ -36,3 +46,22 @@
 // Delegator PD's root CNode, accessible through the delegation CNode.
 #define DGT_CPTR__DGTR_ROOT_CND(CPTR_DGT_CND) \
     (CPTR_DGT_CND | DELEGATION_SLOT_ROOT_CNODE)
+
+static inline char hexchar(unsigned int v)
+{
+    return v < 10 ? '0' + v : ('a' - 10) + v;
+}
+
+/* stolen from monitor/src/util.c */
+static inline void puthex64(seL4_Uint64 val)
+{
+    char buffer[16 + 3];
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    buffer[16 + 3 - 1] = 0;
+    for (unsigned i = 16 + 1; i > 1; i--) {
+        buffer[i] = hexchar(val & 0xf);
+        val >>= 4;
+    }
+    microkit_dbg_puts(buffer);
+}
