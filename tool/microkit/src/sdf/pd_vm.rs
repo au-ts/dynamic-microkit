@@ -515,21 +515,11 @@ impl ProtectionDomain {
                     }
 
                     if child.attribute("delegated").is_some() {
-                        ensure_delegation_allowed(allow_delegation, xml_sdf, &*child)?;
-                    };
-                    let delegated = if let Some(xml_delegated) = node.attribute("delegated") {
-                        match str_to_bool(xml_delegated) {
-                            Some(val) => val,
-                            None => {
-                                return Err(value_error(
-                                    xml_sdf,
-                                    node,
-                                    "delegated must be 'true' or 'false'".to_string(),
-                                ))
-                            }
-                        }
-                    } else {
-                        false
+                        return Err(value_error(
+                            xml_sdf,
+                            &*child,
+                            "IRQ delegation is not supported".to_string(),
+                        ));
                     };
 
                     if let Some(setvar_id) = child.attribute("setvar_id") {
@@ -572,7 +562,6 @@ impl ProtectionDomain {
                         let irq = SysIrq {
                             id: id as u64,
                             kind: SysIrqKind::Conventional { irq, trigger },
-                            delegated,
                         };
                         irqs.push(irq);
                     } else if let Some(pin_str) = child.attribute("pin") {
@@ -674,7 +663,6 @@ impl ProtectionDomain {
                                 polarity,
                                 vector: vector as u64,
                             },
-                            delegated,
                         };
                         irqs.push(irq);
                     } else if let Some(pcidev_str) = child.attribute("pcidev") {
@@ -725,7 +713,6 @@ impl ProtectionDomain {
                                 handle: handle as u64,
                                 vector: vector as u64,
                             },
-                            delegated,
                         };
                         irqs.push(irq);
                     } else {
