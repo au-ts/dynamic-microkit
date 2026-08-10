@@ -109,6 +109,7 @@ This document attempts to clearly describe all of these terms, however as the co
 * [interrupt](#irq)
 * [fault](#fault)
 * [ioport](#ioport)
+* [capability delegation](#delegation)
 * [IO address space](#io_address_space)
 * [domain scheduling](#domains)
 
@@ -384,6 +385,24 @@ delivered to another PD, the fault being handled depends on when the parent PD i
 ## I/O Ports {#ioport}
 
 I/O ports are x86 mechanisms to access certain physical devices (e.g. PC serial ports or PCI) using the `in` and `out` CPU instructions. The system description specifies if a protection domain have access to certain port address ranges. These accesses will be executed by seL4 and the result returned to protection domains.
+
+## Capability Delegation {#delegation}
+
+Capability delegation allows a parent protection domain to control when selected resources of one of its direct child protection domains become available at runtime.
+
+A parent PD that manages delegated resources is called a *delegatee*. A direct child PD whose resources are managed by that delegatee is called a *delegator*. Together, the two PDs form a *delegatee-delegator pair*.
+
+Resources selected for delegation are not initially installed in the delegator's CSpace. Instead, the Microkit tool places the corresponding capabilities in a *delegation CNode* associated with the delegatee-delegator pair. The delegatee can then use these capabilities to make the resources available to the delegator at runtime.
+
+Capability delegation is supported for:
+
+* channel ends;
+* memory-region mappings;
+* x86 I/O ports.
+
+IRQ delegation is not supported.
+
+See the [`protection_domain`](#sysdesc) and [`channel`](#sysdesc) System Description File sections for the corresponding `delegatee` and `delegated` attributes. The `cap_delegate` example in the SDK demonstrates capability delegation.
 
 ## IO Address Spaces {#io_address_space}
 
@@ -1039,6 +1058,7 @@ It supports the following attributes:
 * `domain`: (conditionally required) the name of the domain that this PD belongs to.
             If a domain schedule is specified, this is mandatory, else it is disallowed.
 * `sym_emit`: (optional) Emit the resolved symbol patches for this PD to `symbols/<pd-name>.mktsym`. Defaults to false.
+* `delegatee`: (optional) Indicates that the PD can manage delegated capabilities for its child PDs (delegators). Defaults to false. A delegatee can manage at most 16 delegators.
 
 Additionally, it supports the following child elements:
 
@@ -1064,10 +1084,14 @@ The `map` element has the following attributes:
 * `vaddr`: Identifies the virtual address at which to map the memory region.
 * `perms`: Identifies the permissions with which to map the memory region. Can be a combination of `r` (read), `w` (write), and `x` (eXecute), with the exception of a write-only mapping (just `w`).
            Defaults to read-write.
+* `delegated`: (optional) Indicates that the memory region mapping is delegated. This is only valid for a map belonging to a child of a PD with `delegatee="true"`. For a delegated map, the frames (of this memory region) are not initially mapped into the delegator's VSpace; the corresponding frame capabilities are instead placed in the delegation CNode so that the delegatee can establish the mapping at runtime. (However, the pagetable structure for establishing the delegated maps is populated, same as non-delegated maps).
+               Defaults to false.
 * `cached`: (optional) Determines if mapped with caching enabled or disabled. Defaults to `true`.
 * `setvar_vaddr`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the virtual address of the memory region.
 * `setvar_size`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the size of the memory region.
 * `setvar_prefill_size`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the size of the prefilled data.
+
+The `irq` element does not support capability delegation. Specifying a `delegated` attribute on an `irq` element is an error.
 
 The `irq` element has the following attributes on ARM and RISC-V:
 
@@ -1101,6 +1125,9 @@ The `ioport` element has the following attributes:
 * `size`: The size in bytes of the I/O port region.
 * `setvar_id`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the I/O port identifier.
 * `setvar_addr`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the base address of the I/O port.
+* `delegated`: (optional) Indicates that the I/O port capability is delegated. Defaults to false.
+               This is only valid for an I/O port belonging to a child of a PD with `delegatee="true"`.
+               A delegated I/O port capability is initially placed in the delegation CNode instead of the delegator's Microkit CNode.
 
 The `setvar` element has the following attributes:
 
@@ -1113,6 +1140,8 @@ The `protection_domain` element has the same attributes as any other protection 
 
 * `id`: The ID of the child for the parent to refer to.
 * `setvar_id`: (optional) Specifies a symbol in the parent program image. This symbol will be rewritten with the ID of the child.
+
+A direct child of a PD with `delegatee="true"` is a delegator. The parent and child form a delegatee-delegator pair, and Microkit creates one delegation CNode for each such pair.
 
 On x86-64, a PD with a VCPU cannot have child PDs.
 
@@ -1152,7 +1181,38 @@ The `vcpu` element has the following attributes:
                     core of the PD that the virtual machine belongs to.
 * `setvar_id`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the vCPU identifier.
 
-The `map` element has the same attributes as the protection domain with the exception of `setvar_vaddr`.
+The `map` element has the same attributes as the protection domain with the exception of `setvar_vaddr` and `delegated`. Virtual-machine memory-region maps do not support capability delegation.
+
+### Capability delegation example
+
+The following example creates one delegatee-delegator pair and delegates a channel end and a memory-region mapping:
+
+```xml
+<system>
+    <memory_region name="shared" size="0x1000" />
+
+    <protection_domain name="delegatee" priority="25" delegatee="true">
+        <program_image path="delegatee.elf" />
+
+        <protection_domain name="delegator" id="0" priority="20">
+            <program_image path="delegator.elf" />
+            <map mr="shared" vaddr="0xc00000" perms="rw" delegated="true" />
+        </protection_domain>
+    </protection_domain>
+
+    <protection_domain name="server" priority="25">
+        <program_image path="server.elf" />
+    </protection_domain>
+
+    <channel>
+        <end pd="server" id="0" />
+        <end pd="delegator" id="0" delegated="true" />
+    </channel>
+</system>
+```
+
+The delegated channel capability and the frame capability for `shared` are initially held in the delegation CNode rather than being directly available to `delegator`.
+ 
 
 ## `memory_region`
 
@@ -1293,7 +1353,10 @@ The `end` element has the following attributes:
         On x86-64, PDs with virtual machines cannot receive protected procedure calls.
 * `notify`: (optional) Indicates that the protection domain for this end can send a notification to the other end; defaults to true.
 * `setvar_id`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the channel identifier.
-
+* `delegated`: (optional) Indicates that the capability associated with this channel end is delegated. Defaults to false.
+               This is only valid when `pd` names a child of a PD with `delegatee="true"`.
+               The capability is initially placed in the delegation CNode instead of the delegator's (the child PD's) Microkit CNode.
+ 
 The `id` is passed to the PD in the `notified` and `protected` entry points.
 The `id` should be passed to the `microkit_notify` and `microkit_ppcall` functions.
 
@@ -2146,3 +2209,42 @@ produces a valid image, there should be no errors upon initialising the system.
 If there are any errors with configuring the system (e.g running out of memory),
 they will be caught at build-time. This can only reasonably be done due to the
 static-architecture of Microkit systems.
+
+## Capability Delegation CSpace Layout
+
+Each PD has a two-level CSpace consisting of a root CNode and a Microkit CNode. The root CNode has 64 slots and the Microkit CNode has 512 slots. Slot 0 of the root CNode refers to the Microkit CNode.
+
+For each delegatee-delegator pair, Microkit creates one 512-slot delegation CNode. The delegatee's root CNode slots 48 through 63 are reserved for capabilities to delegation CNodes (if delegatee="true"). Consequently, a delegatee can manage at most 16 delegators.
+
+Conceptually:
+
+```text
+Delegatee root CNode
+|
++-- slot 0      -> delegatee Microkit CNode
+|
++-- slots 48-63 -> delegation CNodes
+```
+
+A delegation CNode contains capabilities used to manage the relationship as well as the delegated resource capabilities:
+
+```text
+Delegation CNode
+|
++-- slot 0 -> self-reference
++-- slot 1 -> delegator Microkit CNode
++-- slot 2 -> delegator root CNode
++-- slot 3 -> delegation CNode cap suitable for granting to the delegator
++-- slot 4 -> delegator VSpace
+|
++-- resource slots
+    +-- delegated channel capabilities
+    +-- delegated memory-region frame capabilities
+    +-- delegated I/O port capabilities
+```
+
+Where a delegated resource already has a normal Microkit CNode slot, such as a channel or I/O port capability, its capability uses the corresponding slot in the delegation CNode. This allows the capability to be copied to the delegator's normal Microkit CNode without changing its Microkit-visible identifier.
+
+For a delegated memory region map, the Microkit tool creates the paging structures required to reach the mapped virtual-address range but does not install the frame capabilities at the leaf level. The frame capabilities and the delegator VSpace capability are available through the delegation CNode, allowing the delegatee to establish the leaf mappings dynamically, for example in response to a child virtual-memory fault.
+
+By default the delegatee can access the delegation CNode while the delegator cannot. A delegatee may choose to perform capability operations itself, or may explicitly grant the delegator temporary access to the delegation CNode. The policy and protocol for granting and revoking such access are implemented by the application.
