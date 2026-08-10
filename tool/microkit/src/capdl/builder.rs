@@ -1313,6 +1313,7 @@ pub fn build_capdl_spec(
                 ),
                 PD_CAP_BITS,
                 caps,
+                false, /* delegation cnode should never receive untypeds */
             );
 
             let guard_size =
