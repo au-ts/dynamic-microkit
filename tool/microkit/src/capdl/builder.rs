@@ -113,6 +113,7 @@ const DLG_CNODE_DGTR_VSPACE_CAP: u32 = 4;
 
 const DLG_PPC_CAP: u32 = PD_BASE_OUTPUT_ENDPOINT_CAP as u32;
 const DLG_MR_CAP: u32 = DLG_PPC_CAP + 64;
+const DLG_MR_CAP_END: u32 = PD_BASE_IOPORT_CAP as u32;
 
 pub const SLOT_BITS: u64 = 5;
 pub const SLOT_SIZE: u64 = 1 << SLOT_BITS;
@@ -421,7 +422,10 @@ fn map_memory_region<M: Map>(
             cnode.push(capdl_util_make_cte(*slot, frame_cap));
 
             *slot += 1;
-            assert!(*slot <= PD_CAP_SIZE);
+            assert!(
+                *slot < DLG_MR_CAP_END,
+                "delegated MR capabilities exceed reserved delegation CNode range"
+            );
         }
     }
     Ok(())
@@ -928,10 +932,13 @@ pub fn build_capdl_spec(
             let ioport_obj_id =
                 capdl_util_make_ioport_obj(&mut spec_container, &pd.name, ioport.addr, ioport.size);
             let ioport_cap = capdl_util_make_ioport_cap(ioport_obj_id);
-            caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(
-                (PD_BASE_IOPORT_CAP + ioport.id) as u32,
-                ioport_cap,
-            ));
+            let ioport_cap_idx = (PD_BASE_IOPORT_CAP + ioport.id) as u32;
+            if ioport.delegated {
+                caps_to_insert_to_pd_delegation_cnode
+                    .push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
+            } else {
+                caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
+            }
         }
 
         // Step 3-11 Create VM Spec.
