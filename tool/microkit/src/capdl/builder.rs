@@ -419,13 +419,12 @@ fn map_memory_region<M: Map>(
         cur_vaddr += page_sz;
 
         if let Some((cnode, slot)) = delegation.as_mut() {
-            cnode.push(capdl_util_make_cte(*slot, frame_cap));
-
-            *slot += 1;
             assert!(
                 *slot < DLG_MR_CAP_END,
                 "delegated MR capabilities exceed reserved delegation CNode range"
             );
+            cnode.push(capdl_util_make_cte(*slot, frame_cap));
+            *slot += 1;
         }
     }
     Ok(())
@@ -713,6 +712,7 @@ pub fn build_capdl_spec(
         }
 
         // Step 3-2: Map in all Memory Regions
+        let mut next_delegated_mr_cap = DLG_MR_CAP;
         for map in pd.maps.iter() {
             let frames = &mr_name_to_frames[&map.mr];
             // MRs have frames of equal size so just use the first frame's page size.
@@ -745,8 +745,12 @@ pub fn build_capdl_spec(
                     page_size_bytes,
                     &pd_elf_spec.address_space,
                     frames,
-                    Some((&mut caps_to_insert_to_pd_delegation_cnode, DLG_MR_CAP)),
+                    Some((
+                        &mut caps_to_insert_to_pd_delegation_cnode,
+                        next_delegated_mr_cap,
+                    )),
                 )?;
+                next_delegated_mr_cap += frames.len() as u32;
             } else {
                 map_memory_region(
                     &mut spec_container,
