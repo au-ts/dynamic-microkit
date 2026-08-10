@@ -1,6 +1,6 @@
 # Capability Delegation
 
-Capability delegation allows a parent protection domain (the **delegatee**) to dynamically control a subset of capabilities associated with one of its child protection domains (the **delegator**).
+Capability delegation allows a parent protection domain (the **delegatee**) to dynamically control a subset of capabilities associated with one of its participating child protection domains (the **delegator**).
 
 Instead of installing every capability directly into the delegator PD's CSpace, capabilities marked as *delegated="true"* are placed into a separate **delegation CNode**. The delegation CNode is controlled by the delegatee PD and represents the delegation relationship between one delegatee-delegator pair.
 
@@ -54,7 +54,14 @@ A protection domain that manages delegated capabilities is marked with:
 delegatee="true"
 ```
 
-A child PD that is permitted to participate in delegation contains resources that are marked as delegated. For example, a channel end or a memory region can use:
+A child PD that participates in capability delegation is marked with:
+
+```xml
+allow_delegation="true"
+```
+Resources associated with the delegator can then be marked as delegated.
+
+For example, a channel end or a memory-region mapping can use:
 
 ```xml
 delegated="true"
@@ -66,7 +73,7 @@ delegated="true"
 <protection_domain name="delegatee" priority="25" delegatee="true">
     <program_image path="delegatee.elf" />
 
-    <protection_domain name="delegator" id="0" priority="20" >
+    <protection_domain name="delegator" id="0" priority="20" allow_delegation="true" >
         <program_image path="delegator.elf" />
     </protection_domain>
 
@@ -353,7 +360,7 @@ server
 
 There is a notification channel between `delegator` and `server`.
 
-The delegator's channel end is marked:
+The delegator (child) PD is configured with `allow_delegation="true"`, and its channel end is marked:
 
 ```xml
 delegated="true"

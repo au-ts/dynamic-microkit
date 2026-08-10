@@ -151,7 +151,7 @@ impl ProtectionDomain {
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
         role: ProtectionDomainRole,
-        allow_delegation: bool,
+        has_delegatee: bool,
         domains: &Domains,
     ) -> Result<ProtectionDomain, String> {
         let mut attrs = vec![
@@ -162,6 +162,7 @@ impl ProtectionDomain {
             "passive",
             "stack_size",
             "delegatee",
+            "allow_delegation",
             // The SMC field is only available in certain configurations
             // but we do the error-checking further down.
             "smc",
@@ -180,16 +181,39 @@ impl ProtectionDomain {
             }
             ProtectionDomainRole::Normal => {}
         }
+        check_attributes(xml_sdf, node, &attrs)?;
 
-        if allow_delegation && role == ProtectionDomainRole::Normal {
-            return Err(value_error(
-                xml_sdf,
-                node,
-                "Resource delegation is not allowed to a PD without a parent.".to_string(),
-            ));
+        let allow_delegation = if let Some(xml_delegation) = node.attribute("allow_delegation") {
+            match str_to_bool(xml_delegation) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "allow_delegation must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
         };
 
-        check_attributes(xml_sdf, node, &attrs)?;
+        if allow_delegation {
+            if role == ProtectionDomainRole::Normal {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "Resource delegation is not allowed to a PD without a parent.".to_string(),
+                ));
+            } else if !has_delegatee {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "Resource delegation is not allowed to the child of a non-delegatee PD"
+                        .to_string(),
+                ));
+            }
+        };
 
         let name = checked_lookup(xml_sdf, node, "name")?.to_string();
 
@@ -850,13 +874,12 @@ impl ProtectionDomain {
 
                     // if the 'delegatee' attribute is set and valid,
                     // child PDs are allowed to delegate their 'delegated' caps
-                    let delegation: bool = delegatee;
                     let child_pd = ProtectionDomain::from_xml(
                         config,
                         xml_sdf,
                         &*child,
                         ProtectionDomainRole::Child,
-                        delegation,
+                        delegatee,
                         domains,
                     )?;
 
@@ -884,13 +907,12 @@ impl ProtectionDomain {
 
                     // if the 'delegatee' attribute is set and valid,
                     // child PDs are allowed to delegate their 'delegated' caps
-                    let delegation: bool = delegatee;
                     let child_pd = ProtectionDomain::from_xml(
                         config,
                         xml_sdf,
                         &*child,
                         ProtectionDomainRole::Template,
-                        delegation,
+                        delegatee,
                         domains,
                     )?;
 
