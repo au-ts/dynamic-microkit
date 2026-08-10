@@ -6,9 +6,9 @@
 -->
 <system>
 
-    <protection_domain name="loader" priority="25" >
+    <protection_domain name="loader" priority="25" delegatee="true" >
         <program_image path="loader.elf" />
-        <template name="loadee" id="0" priority="20">
+        <template name="loadee" id="0" priority="20" allow_delegation="true" >
             <irq irq="12" id="3" delegated="true" />
         </template>
     </protection_domain>

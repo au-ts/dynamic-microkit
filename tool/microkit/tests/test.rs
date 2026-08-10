@@ -786,7 +786,7 @@ mod protection_domain {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_delegate_without_delegatee.system",
-            "Error: 'delegated' is not allowed within this PD on element 'map':",
+            "Error: Resource delegation is not allowed to a PD without a parent. on element 'protection_domain':",
         )
     }
 
@@ -832,6 +832,15 @@ mod protection_domain {
             &DEFAULT_X86_64_KERNEL_CONFIG,
             "pd_delegate_invalid_ioport.system",
             "Error: 'delegated' is not allowed within this PD on element 'ioport':",
+        )
+    }
+
+    #[test]
+    fn test_delegate_invalid_delegator() {
+        check_error(
+            &DEFAULT_AARCH64_KERNEL_CONFIG,
+            "pd_delegate_invalid_delegator.system",
+            "Error: Resource delegation is not allowed to the child of a non-delegatee PD on element 'template':",
         )
     }
 

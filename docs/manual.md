@@ -1059,6 +1059,7 @@ It supports the following attributes:
             If a domain schedule is specified, this is mandatory, else it is disallowed.
 * `sym_emit`: (optional) Emit the resolved symbol patches for this PD to `symbols/<pd-name>.mktsym`. Defaults to false.
 * `delegatee`: (optional) Indicates that the PD can manage delegated capabilities for its child PDs (delegators). Defaults to false. A delegatee can manage at most 16 delegators.
+* `allow_delegation`: (optional) Indicates that the PD participates in capability delegation as a delegator. Defaults to false. When enabled, the parent of this PD must be a delegatee.
 
 Additionally, it supports the following child elements:
 
@@ -1084,7 +1085,7 @@ The `map` element has the following attributes:
 * `vaddr`: Identifies the virtual address at which to map the memory region.
 * `perms`: Identifies the permissions with which to map the memory region. Can be a combination of `r` (read), `w` (write), and `x` (eXecute), with the exception of a write-only mapping (just `w`).
            Defaults to read-write.
-* `delegated`: (optional) Indicates that the memory region mapping is delegated. This is only valid for a map belonging to a child of a PD with `delegatee="true"`. For a delegated map, the frames (of this memory region) are not initially mapped into the delegator's VSpace; the corresponding frame capabilities are instead placed in the delegation CNode so that the delegatee can establish the mapping at runtime. (However, the pagetable structure for establishing the delegated maps is populated, same as non-delegated maps).
+* `delegated`: (optional) Indicates that the memory region mapping is delegated. This is only valid for a map belonging to a PD with `allow_delegation="true"`, who is also a child of a PD with `delegatee="true"`. For a delegated map, the frames (of this memory region) are not initially mapped into the delegator's VSpace; the corresponding frame capabilities are instead placed in the delegation CNode so that the delegatee can establish the mapping at runtime. (However, the pagetable structure for establishing the delegated maps is populated, same as non-delegated maps).
                Defaults to false.
 * `cached`: (optional) Determines if mapped with caching enabled or disabled. Defaults to `true`.
 * `setvar_vaddr`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the virtual address of the memory region.
@@ -1126,7 +1127,7 @@ The `ioport` element has the following attributes:
 * `setvar_id`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the I/O port identifier.
 * `setvar_addr`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the base address of the I/O port.
 * `delegated`: (optional) Indicates that the I/O port capability is delegated. Defaults to false.
-               This is only valid for an I/O port belonging to a child of a PD with `delegatee="true"`.
+               This is only valid for an I/O port belonging to a PD with `allow_delegation="true"`, who is also a child of a PD with `delegatee="true"`.
                A delegated I/O port capability is initially placed in the delegation CNode instead of the delegator's Microkit CNode.
 
 The `setvar` element has the following attributes:
@@ -1141,7 +1142,7 @@ The `protection_domain` element has the same attributes as any other protection 
 * `id`: The ID of the child for the parent to refer to.
 * `setvar_id`: (optional) Specifies a symbol in the parent program image. This symbol will be rewritten with the ID of the child.
 
-A direct child of a PD with `delegatee="true"` is a delegator. The parent and child form a delegatee-delegator pair, and Microkit creates one delegation CNode for each such pair.
+A direct child of a PD with `delegatee="true"` can opt in to capability delegation with `allow_delegation="true"`. Such a child is a delegator, and Microkit creates one delegation CNode for each delegatee-delegator pair.
 
 On x86-64, a PD with a VCPU cannot have child PDs.
 
@@ -1194,7 +1195,7 @@ The following example creates one delegatee-delegator pair and delegates a chann
     <protection_domain name="delegatee" priority="25" delegatee="true">
         <program_image path="delegatee.elf" />
 
-        <protection_domain name="delegator" id="0" priority="20">
+        <protection_domain name="delegator" id="0" priority="20" allow_delegation="true" >
             <program_image path="delegator.elf" />
             <map mr="shared" vaddr="0xc00000" perms="rw" delegated="true" />
         </protection_domain>
@@ -1354,7 +1355,7 @@ The `end` element has the following attributes:
 * `notify`: (optional) Indicates that the protection domain for this end can send a notification to the other end; defaults to true.
 * `setvar_id`: (optional) Specifies a symbol in the program image. This symbol will be rewritten with the channel identifier.
 * `delegated`: (optional) Indicates that the capability associated with this channel end is delegated. Defaults to false.
-               This is only valid when `pd` names a child of a PD with `delegatee="true"`.
+               This is only valid when `pd` names a PD with `allow_delegation="true"`, who is also a child of a PD with `delegatee="true"`.
                The capability is initially placed in the delegation CNode instead of the delegator's (the child PD's) Microkit CNode.
  
 The `id` is passed to the PD in the `notified` and `protected` entry points.
