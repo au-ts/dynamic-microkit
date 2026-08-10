@@ -162,7 +162,6 @@ impl ProtectionDomain {
             "passive",
             "stack_size",
             "delegatee",
-            "allow_delegation",
             // The SMC field is only available in certain configurations
             // but we do the error-checking further down.
             "smc",
@@ -746,13 +745,13 @@ impl ProtectionDomain {
                         if child.attribute("delegated").is_some() {
                             ensure_delegation_allowed(allow_delegation, xml_sdf, &*child)?;
                         };
-                        let delegated = if let Some(xml_delegated) = node.attribute("delegated") {
+                        let delegated = if let Some(xml_delegated) = child.attribute("delegated") {
                             match str_to_bool(xml_delegated) {
                                 Some(val) => val,
                                 None => {
                                     return Err(value_error(
                                         xml_sdf,
-                                        node,
+                                        &*child,
                                         "delegated must be 'true' or 'false'".to_string(),
                                     ))
                                 }

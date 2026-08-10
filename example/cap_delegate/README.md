@@ -66,11 +66,7 @@ delegated="true"
 <protection_domain name="delegatee" priority="25" delegatee="true">
     <program_image path="delegatee.elf" />
 
-    <protection_domain
-        name="delegator"
-        id="0"
-        priority="20"
-        allow_delegation="true">
+    <protection_domain name="delegator" id="0" priority="20" >
         <program_image path="delegator.elf" />
     </protection_domain>
 
