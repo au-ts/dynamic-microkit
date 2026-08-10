@@ -822,7 +822,7 @@ mod protection_domain {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_delegate_invalid_irq.system",
-            "Error: 'Delegated' is not allowed within this PD on element 'irq':",
+            "Error: IRQ delegation is not supported on element 'irq':",
         )
     }
 
