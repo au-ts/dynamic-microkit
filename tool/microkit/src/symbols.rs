@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 //
 
-use std::{cmp::min, collections::HashMap};
+use std::{cmp::min, collections::HashMap, fs, path::Path};
 
 use crate::{
     elf::ElfFile,
@@ -14,13 +14,74 @@ use crate::{
     MAX_PDS, MAX_VMS, PD_MAX_NAME_LENGTH, VM_MAX_NAME_LENGTH,
 };
 
+const SYMBOL_BUNDLE_MAGIC: &[u8; 8] = b"MKTSYMB\0";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolPatch {
+    pub symbol: String,
+    pub data: Vec<u8>,
+    /// This is used for SDF setvars, otherwise None
+    pub expected_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SymbolBundle {
+    pub pd_name: String,
+    pub patches: Vec<SymbolPatch>,
+}
+
+impl SymbolBundle {
+    pub fn serialise(&self) -> Result<Vec<u8>, String> {
+        let pd_name = self.pd_name.as_bytes();
+        let pd_name_len: u16 = pd_name.len() as u16;
+        debug_assert!(usize::from(pd_name_len) <= PD_MAX_NAME_LENGTH);
+
+        // Should we restrict the number of setvars?
+        let symbol_cnt: u32 = self
+            .patches
+            .len()
+            .try_into()
+            .map_err(|_| format!("too many symbol patches for PD '{}'", self.pd_name))?;
+
+        let mut output = Vec::new();
+
+        // Serialise a header for the symbol bundle
+        output.extend_from_slice(SYMBOL_BUNDLE_MAGIC);
+        output.extend_from_slice(&pd_name_len.to_le_bytes());
+        output.extend_from_slice(&symbol_cnt.to_le_bytes());
+        output.extend_from_slice(pd_name);
+
+        for patch in &self.patches {
+            // We trust the sdf parser to ensure these variables are legal
+            let symbol = patch.symbol.as_bytes();
+            let symbol_len = symbol.len() as u16;
+            let data_len = patch.data.len() as u32;
+
+            let (setvar_flag, expected_size) = match patch.expected_size {
+                Some(size) => (1u16, size),
+                None => (0u16, 0),
+            };
+
+            output.extend_from_slice(&symbol_len.to_le_bytes());
+            output.extend_from_slice(&setvar_flag.to_le_bytes());
+            output.extend_from_slice(&data_len.to_le_bytes());
+            output.extend_from_slice(&expected_size.to_le_bytes());
+            output.extend_from_slice(symbol);
+            output.extend_from_slice(&patch.data);
+        }
+
+        Ok(output)
+    }
+}
+
 /// Patch all the required symbols in the Monitor and children PDs according to
-/// the Microkit's requirements
+/// the Microkit's requirements. For any PD with sym_emit=true, also return the
+/// same resolved patch plan for emission as an external build artifact.
 pub fn patch_symbols(
     kernel_config: &Config,
     pd_elf_files: &mut [ElfFile],
     system: &SystemDescription,
-) -> Result<(), String> {
+) -> Result<Vec<SymbolBundle>, String> {
     // *********************************
     // Step 1. Write ELF symbols in the monitor.
     // *********************************
@@ -90,20 +151,24 @@ pub fn patch_symbols(
         mr_name_to_desc.insert(&mr.name, mr);
     }
 
-    for (pd_global_idx, pd) in system.protection_domains.iter().enumerate() {
-        let Some(program_image) = &pd.program_image else {
-            continue;
-        };
-        let elf_obj = &mut pd_elf_files[pd_global_idx];
+    let mut bundles = Vec::new();
 
+    for (pd_global_idx, pd) in system.protection_domains.iter().enumerate() {
         let name = pd.name.as_bytes();
         let name_length = min(name.len(), PD_MAX_NAME_LENGTH);
-        elf_obj
-            .write_symbol("microkit_name", &name[..name_length])
-            .unwrap();
-        elf_obj
-            .write_symbol("microkit_passive", &[pd.passive as u8])
-            .unwrap();
+
+        let mut patches = vec![
+            SymbolPatch {
+                symbol: "microkit_name".to_string(),
+                data: name[..name_length].to_vec(),
+                expected_size: None,
+            },
+            SymbolPatch {
+                symbol: "microkit_passive".to_string(),
+                data: vec![pd.passive as u8],
+                expected_size: None,
+            },
+        ];
 
         let mut notification_bits: u64 = 0;
         let mut pp_bits: u64 = 0;
@@ -125,63 +190,109 @@ pub fn patch_symbols(
                 }
             }
         }
-        elf_obj
-            .write_symbol("microkit_irqs", &pd.irq_bits().to_le_bytes())
-            .unwrap();
-        elf_obj
-            .write_symbol("microkit_notifications", &notification_bits.to_le_bytes())
-            .unwrap();
-        elf_obj
-            .write_symbol("microkit_pps", &pp_bits.to_le_bytes())
-            .unwrap();
-        elf_obj
-            .write_symbol("microkit_ioports", &pd.ioport_bits().to_le_bytes())
-            .unwrap();
 
-        let mut symbols_to_write: Vec<(&String, u64)> = Vec::new();
-        for setvar in pd.setvars.iter() {
-            // Check that the symbol exists in the ELF
-            match elf_obj.find_symbol(&setvar.symbol) {
-                Ok(sym_info) => {
-                    // Sanity check that the symbol is of word size so we dont overwrite anything.
-                    let expected_symbol_size = kernel_config.word_size / 8;
-                    if sym_info.1 != expected_symbol_size {
+        patches.push(SymbolPatch {
+            symbol: "microkit_irqs".to_string(),
+            data: pd.irq_bits().to_le_bytes().to_vec(),
+            expected_size: None,
+        });
+        patches.push(SymbolPatch {
+            symbol: "microkit_notifications".to_string(),
+            data: notification_bits.to_le_bytes().to_vec(),
+            expected_size: None,
+        });
+        patches.push(SymbolPatch {
+            symbol: "microkit_pps".to_string(),
+            data: pp_bits.to_le_bytes().to_vec(),
+            expected_size: None,
+        });
+        patches.push(SymbolPatch {
+            symbol: "microkit_ioports".to_string(),
+            data: pd.ioport_bits().to_le_bytes().to_vec(),
+            expected_size: None,
+        });
+
+        // Sanity check that the symbol is of word size so we dont overwrite anything.
+        let expected_symbol_size = kernel_config.word_size / 8;
+        for setvar in &pd.setvars {
+            let data = match &setvar.kind {
+                sdf::SysSetVarKind::Size { mr } => mr_name_to_desc[mr].size,
+                sdf::SysSetVarKind::Vaddr { address } => *address,
+                sdf::SysSetVarKind::Paddr { region } => {
+                    mr_name_to_desc[region].paddr().unwrap_or_default()
+                }
+                sdf::SysSetVarKind::Id { id } => *id,
+                sdf::SysSetVarKind::X86IoPortAddr { address } => *address,
+                sdf::SysSetVarKind::PrefillSize { mr } => {
+                    mr_name_to_desc[mr].prefill_bytes.as_ref().unwrap().len() as u64
+                }
+            };
+            patches.push(SymbolPatch {
+                symbol: setvar.symbol.clone(),
+                data: data.to_le_bytes().to_vec(),
+                expected_size: Some(expected_symbol_size),
+            });
+        }
+
+        // When the sdf contains 'sym_emit="true"'
+        if pd.sym_emit {
+            bundles.push(SymbolBundle {
+                pd_name: pd.name.clone(),
+                patches: patches.clone(),
+            });
+        }
+
+        let Some(program_image) = &pd.program_image else {
+            continue;
+        };
+        let elf_obj = &mut pd_elf_files[pd_global_idx];
+
+        for patch in &patches {
+            // Check that the (setvar) symbol exists in the ELF
+            if let Some(expected_symbol_size) = patch.expected_size {
+                match elf_obj.find_symbol(&patch.symbol) {
+                    Ok((_, symbol_size)) => {
+                        if symbol_size != expected_symbol_size {
+                            return Err(format!(
+                                "setvar to non-word size symbol '{}' for PD '{}', symbol has size '{}' bytes, expected size '{}' bytes",
+                                patch.symbol, pd.name, symbol_size, expected_symbol_size
+                            ));
+                        }
+                    }
+                    Err(err) => {
                         return Err(format!(
-                            "setvar to non-word size symbol '{}' for PD '{}', symbol has size '{}' bytes, expected size '{}' bytes",
-                            setvar.symbol, pd.name, sym_info.1, expected_symbol_size
+                            "could not patch symbol '{}' in program image for PD '{}' ({}): {}",
+                            patch.symbol,
+                            pd.name,
+                            program_image.display(),
+                            err
                         ));
                     }
-                    let data = match &setvar.kind {
-                        sdf::SysSetVarKind::Size { mr } => mr_name_to_desc[mr].size,
-                        sdf::SysSetVarKind::Vaddr { address } => *address,
-                        sdf::SysSetVarKind::Paddr { region } => {
-                            mr_name_to_desc[region].paddr().unwrap_or_default()
-                        }
-                        sdf::SysSetVarKind::Id { id } => *id,
-                        sdf::SysSetVarKind::X86IoPortAddr { address } => *address,
-                        sdf::SysSetVarKind::PrefillSize { mr } => {
-                            mr_name_to_desc[mr].prefill_bytes.as_ref().unwrap().len() as u64
-                        }
-                    };
-                    symbols_to_write.push((&setvar.symbol, data));
-                }
-                Err(err) => {
-                    return Err(format!(
-                        "could not patch symbol '{}' in program image for PD '{}' ({}): {}",
-                        setvar.symbol,
-                        pd.name,
-                        program_image.display(),
-                        err
-                    ))
                 }
             }
+            elf_obj.write_symbol(&patch.symbol, &patch.data).unwrap();
         }
-        let elf_obj = &mut pd_elf_files[pd_global_idx];
-        for (sym_name, value) in symbols_to_write.iter() {
-            elf_obj
-                .write_symbol(sym_name, &value.to_le_bytes())
-                .unwrap();
-        }
+    }
+
+    Ok(bundles)
+}
+
+pub fn write_symbol_bundles(output_dir: &Path, bundles: &[SymbolBundle]) -> Result<(), String> {
+    if bundles.is_empty() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(output_dir).map_err(|err| {
+        format!(
+            "could not create symbols output directory '{}': {err}",
+            output_dir.display()
+        )
+    })?;
+
+    for bundle in bundles {
+        let path = output_dir.join(format!("{}.mktsym", bundle.pd_name));
+        fs::write(&path, bundle.serialise()?)
+            .map_err(|err| format!("could not write symbol bundle '{}': {err}", path.display()))?;
     }
 
     Ok(())

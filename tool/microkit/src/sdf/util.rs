@@ -6,6 +6,8 @@
 
 use super::{ProtectionDomainRole, SdfLocation, SdfNode, SysSetVar, SystemDescriptionFile};
 
+pub const SETVAR_SYMBOL_MAX_LENGTH: usize = 256;
+
 /// The purpose of this function is to parse an integer that could
 /// either be in decimal or hex format, unlike the normal parsing
 /// functionality that the Rust standard library provides.
@@ -41,6 +43,19 @@ pub fn checked_add_setvar(
     xml_sdf: &SystemDescriptionFile<'_>,
     node: &dyn SdfNode<'_>,
 ) -> Result<(), String> {
+    // Check that the symbol len is reasonable
+    if setvar.symbol.len() > SETVAR_SYMBOL_MAX_LENGTH {
+        return Err(value_error(
+            xml_sdf,
+            node,
+            format!(
+                "setvar symbol '{}' is too long: {} bytes, maximum is {} bytes",
+                setvar.symbol,
+                setvar.symbol.len(),
+                SETVAR_SYMBOL_MAX_LENGTH
+            ),
+        ));
+    }
     // Check that the symbol does not already exist
     for other_setvar in setvars.iter() {
         if setvar.symbol == other_setvar.symbol {
@@ -59,14 +74,15 @@ pub fn checked_add_setvar(
 
 pub fn ensure_setvar_allowed(
     role: ProtectionDomainRole,
+    sym_emit: bool,
     xml_sdf: &SystemDescriptionFile<'_>,
     node: &dyn SdfNode,
 ) -> Result<(), String> {
-    if role == ProtectionDomainRole::Template {
+    if role == ProtectionDomainRole::Template && !sym_emit {
         return Err(value_error(
             xml_sdf,
             node,
-            "template PD cannot have any setvars".to_string(),
+            "template PD cannot have setvars unless 'sym_emit' is true".to_string(),
         ));
     }
 

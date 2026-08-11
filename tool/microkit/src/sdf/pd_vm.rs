@@ -88,6 +88,8 @@ pub struct ProtectionDomain {
     pub domain: Option<u8>,
     pub program_image: Option<PathBuf>,
     pub program_image_for_symbols: Option<PathBuf>,
+    /// Emit the PD's microkit symbols collection as a bundle.
+    pub sym_emit: bool,
     /// Enable FPU for this PD.
     pub fpu: bool,
     pub maps: Vec<SysMap>,
@@ -158,6 +160,7 @@ impl ProtectionDomain {
             // The SMC field is only available in certain configurations
             // but we do the error-checking further down.
             "smc",
+            "sym_emit",
             "cpu",
             "domain",
             "fpu",
@@ -218,6 +221,20 @@ impl ProtectionDomain {
                         xml_sdf,
                         node,
                         "passive must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
+        };
+        let sym_emit = if let Some(xml_sym_emit) = node.attribute("sym_emit") {
+            match str_to_bool(xml_sym_emit) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "sym_emit must be 'true' or 'false'".to_string(),
                     ))
                 }
             }
@@ -407,7 +424,7 @@ impl ProtectionDomain {
                     let map = SysMap::from_xml(xml_sdf, &*child, true, map_max_vaddr)?;
 
                     if let Some(setvar_vaddr) = child.attribute("setvar_vaddr") {
-                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                        ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_vaddr.to_string(),
                             kind: SysSetVarKind::Vaddr { address: map.vaddr },
@@ -416,7 +433,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_size) = child.attribute("setvar_size") {
-                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                        ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_size.to_string(),
                             kind: SysSetVarKind::Size { mr: map.mr.clone() },
@@ -425,7 +442,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_prefill_size) = child.attribute("setvar_prefill_size") {
-                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                        ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_prefill_size.to_string(),
                             kind: SysSetVarKind::PrefillSize { mr: map.mr.clone() },
@@ -451,7 +468,7 @@ impl ProtectionDomain {
                     }
 
                     if let Some(setvar_id) = child.attribute("setvar_id") {
-                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                        ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_id.to_string(),
                             kind: SysSetVarKind::Id { id: id as u64 },
@@ -684,7 +701,7 @@ impl ProtectionDomain {
                         }
 
                         if let Some(setvar_id) = child.attribute("setvar_id") {
-                            ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                            ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                             let setvar = SysSetVar {
                                 symbol: setvar_id.to_string(),
                                 kind: SysSetVarKind::Id { id: id as u64 },
@@ -696,7 +713,7 @@ impl ProtectionDomain {
                             sdf_parse_number(checked_lookup(xml_sdf, &*child, "addr")?, &*child)?;
 
                         if let Some(setvar_addr) = child.attribute("setvar_addr") {
-                            ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                            ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                             let setvar = SysSetVar {
                                 symbol: setvar_addr.to_string(),
                                 kind: SysSetVarKind::X86IoPortAddr { address: addr },
@@ -730,7 +747,7 @@ impl ProtectionDomain {
                     }
                 }
                 "setvar" => {
-                    ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                    ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                     check_attributes(xml_sdf, &*child, &["symbol", "region_paddr"])?;
                     let symbol = checked_lookup(xml_sdf, &*child, "symbol")?.to_string();
                     let region = checked_lookup(xml_sdf, &*child, "region_paddr")?.to_string();
@@ -761,7 +778,7 @@ impl ProtectionDomain {
                     )?;
 
                     if let Some(setvar_id) = child_pd.setvar_id.clone() {
-                        ensure_setvar_allowed(role.clone(), xml_sdf, &*child)?;
+                        ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
                         let setvar = SysSetVar {
                             symbol: setvar_id.to_string(),
                             kind: SysSetVarKind::Id {
@@ -876,6 +893,7 @@ impl ProtectionDomain {
             domain,
             program_image,
             program_image_for_symbols,
+            sym_emit,
             fpu,
             maps,
             irqs,

@@ -807,7 +807,7 @@ mod protection_domain {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_template_has_element_with_setvar.system",
-            "Error: template PD cannot have any setvars on element 'map':",
+            "Error: template PD cannot have setvars unless 'sym_emit' is true on element 'map':",
         )
     }
 
@@ -816,7 +816,7 @@ mod protection_domain {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,
             "pd_template_has_setvars.system",
-            "Error: template PD cannot have any setvars on element 'setvar':",
+            "Error: template PD cannot have setvars unless 'sym_emit' is true on element 'setvar':",
         )
     }
 
