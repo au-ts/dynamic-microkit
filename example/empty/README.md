@@ -33,6 +33,28 @@ The boot phase of the loadee PD is:
   the `pc` register of loadee at the given vaddr (i.e., the elf entry).
 - the loadee starts executing...
 
+This example also tests the 'sym_emit' attribute for protection domains. PDs with such an
+attribute will let the microkit tool dump a build artifact, which is called "symbol bundle",
+containing all microkit symbols and setvar values that should be patched at system build time.
+In the given sdf, template PD 'loadee' is configured with `sym_emit="true"` and the
+microkit tool will emit the microkit symbols (e.g., `microkit_name`, `microkit_notifications`)
+to a file called `loadee.mktsymb` in `BUILD/symbols`.
+
+Such an attribute is useful for the template PDs who have no program image.
+The `'pd_name'.mktsymb` file contains the microkit symbols that are not directly accessible
+for PDs who have no images to patch with at build time. A template PD user can use external
+tools to patch their application payload with the mktsymb file asynchronously.
+
+In our example, given that the program image of the loadee is linked with the loader before
+system build time, we demonstrate the usage of sym_emit by introducing a two-stage build
+procedure.
++ At the first stage, we provide an SDF and the elf of loader and loadee to microkit, the
+  microkit tool will generate a `loadee.mktsymb` for the loadee. 
++ We then use a py script called `payload-patcher.py` to write all symbols in `loadee.mktsymb`
+  into the elf of loadee, and regenerate the elf of loader using the new loadee elf.
++ At the second stage, we provide the same SDF with newer elfs to microkit, and create the
+  final system image.
+
 All supported platforms are supported in this example.
 
 ## Building
@@ -54,17 +76,20 @@ INFO  [sel4_capdl_initializer::initialize] Starting threads
 MON|INFO: Microkit Monitor started!
 >> loader: hi
 >> receive the first fault from an empty pd with id: '0'
-### loadee, starting
+microkit name: loadee starting
+>> loader: received from loadee, mktsymb tested
 >> seL4_Fault_VMFault
->> Fault address: '0'
->> Fault instruction pointer: '2621520'
-### loadee, starting
+>> Fault address: '0x0000000000000000'
+>> Fault instruction pointer: '0x0000000000028090'
+microkit name: loadee starting
+>> loader: received from loadee, mktsymb tested
 >> seL4_Fault_VMFault
->> Fault address: '0'
->> Fault instruction pointer: '2621520'
-### loadee, starting
+>> Fault address: '0x0000000000000000'
+>> Fault instruction pointer: '0x0000000000028090'
+microkit name: loadee starting
+>> loader: received from loadee, mktsymb tested
 >> seL4_Fault_VMFault
->> Fault address: '0'
->> Fault instruction pointer: '2621520'
+>> Fault address: '0x0000000000000000'
+>> Fault instruction pointer: '0x0000000000028090'
 >> loader: too many restarts - PD stopped
 ```

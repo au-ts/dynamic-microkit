@@ -8,7 +8,14 @@
 
 void init(void)
 {
-    microkit_dbg_puts("### loadee, starting\n");
+    // test mktsymb patcher
+    microkit_dbg_puts("microkit name: ");
+    microkit_dbg_puts(microkit_name);
+    microkit_dbg_puts(" starting\n");
+
+    // test microkit_notifications bitmap
+    microkit_notify(1);
+
     for (int i = 0; i < 300000; ++i) {
         __asm__ volatile("nop");
     }
