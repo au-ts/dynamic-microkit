@@ -594,6 +594,40 @@ On x86-64, the image format is always ELF, it is expected to be loaded as a Mult
 
 See [x86-64 generic support](#x86_64_generic) for more details.
 
+## Symbol emission
+
+A protection domain or template protection domain may set `sym_emit="true"` to
+emit the symbols that the Microkit tool would patch for that PD. This is useful
+when the program image is supplied or loaded separately from the system image.
+
+For each PD with symbol emission enabled, the tool writes a unique
+`symbols/<pd-name>.mktsym` file in the directory containing the output image.
+Each file contains the resolved symbol patches for exactly one PD.
+
+All integer fields in the file are little-endian. The file begins with:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `magic` | `u8[8]` | `MKTSYMB\\0` |
+| `pd_name_len` | `u16` | Length of the PD name |
+| `symbol_cnt` | `u32` | Number of symbol patches |
+| `pd_name` | `u8[pd_name_len]` | PD name |
+
+The header is followed by `symbol_cnt` symbol patch records:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `symbol_len` | `u16` | Length of the symbol name |
+| `setvar` | `u16` | `1` for an SDF setvar, otherwise `0` |
+| `data_len` | `u32` | Length of the patch data |
+| `expected_size` | `u64` | Expected ELF symbol size for a setvar, otherwise `0` |
+| `symbol` | `u8[symbol_len]` | Symbol name |
+| `data` | `u8[data_len]` | Bytes to write to the symbol |
+
+The records describe the same resolved values used by the Microkit tool when
+patching a normal PD's program image. For template PDs, this allows those
+patches to be applied later when a program image becomes available.
+
 # Language Support
 
 There are native APIs for C/C++ and Rust.
@@ -1004,6 +1038,7 @@ It supports the following attributes:
 * `fpu`: (optional) whether this PD can access the FPU. Defaults to true.
 * `domain`: (conditionally required) the name of the domain that this PD belongs to.
             If a domain schedule is specified, this is mandatory, else it is disallowed.
+* `sym_emit`: (optional) Emit the resolved symbol patches for this PD to `symbols/<pd-name>.mktsym`. Defaults to false.
 
 Additionally, it supports the following child elements:
 
@@ -1087,11 +1122,11 @@ The `template` element has the same elements as protection domains but not:
 * `protection_domain`: A template protection domain should always be a child PD.
 * `template`: A template proetction domain cannot have child templates.
 * `virtual_machine`: A template protection domain cannot have virtual machines.
-* `setvar`: A template protection domain cannot have any setvar due to the lack of image.
+* `setvar`: A template protection domain can only have setvars when `sym_emit` is true, as there is no program image to patch at build time.
 
 It also has the same attributes as protection domains but not:
-* `setvar_id`: This attribute is valid only when a program image is given.
-Also, any child element cannot have `setvars` for the same purpose of not having program image.
+* `setvar_id`: This attribute is valid only when a program image is given or `sym_emit` is false.
+Also, any child element cannot have `setvars` for the same purpose of not having program image nor `sym_emit` is true.
 
 The `virtual_machine` element has the following attribute:
 

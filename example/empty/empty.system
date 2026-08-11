@@ -10,10 +10,15 @@
     <protection_domain name="loader" priority="25">
         <program_image path="loader.elf" />
         <map mr="shared" vaddr="0xC00000" perms="rw" cached="true" />
-        <template name="loadee" id="0" priority="20">
+        <template name="loadee" id="0" priority="20" sym_emit="true" >
             <!-- the loadable regions should live within this MR -->
             <map mr="shared" vaddr="0x20000" perms="rwx" cached="true"/>
         </template>
     </protection_domain>
+
+    <channel>
+        <end pd="loader" id="1" />
+        <end pd="loadee" id="1" />
+    </channel>
 
 </system>

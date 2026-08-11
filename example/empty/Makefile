@@ -51,6 +51,11 @@ MICROKIT_TOOL ?= $(MICROKIT_SDK)/bin/microkit
 LOADEE_OBJS := loadee.o
 LOADER_OBJS := loader.o
 
+LOADEE_RAW := $(BUILD_DIR)/loadee-unpatched.elf
+STAGE1_PAYLOAD := $(BUILD_DIR)/payloads-stage1.o
+STAGE1_LOADER := $(BUILD_DIR)/loader-stage1.elf
+STAGE1_IMAGE := $(BUILD_DIR)/empty-stage1.img
+STAGE1_REPORT := $(BUILD_DIR)/report-stage1.txt
 IMAGES := loadee.elf loader.elf
 CFLAGS := -nostdlib -ffreestanding -g -O3 -Wall  -Wno-unused-function -Werror -I$(BOARD_DIR)/include $(CFLAGS_ARCH)
 LDFLAGS := -L$(BOARD_DIR)/lib
@@ -64,16 +69,39 @@ all: $(IMAGE_FILE)
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
 
-$(BUILD_DIR)/payloads.o:
+$(STAGE1_PAYLOAD): $(LOADEE_RAW) package.S
 	$(CC) -c $(CFLAGS) \
-		-DLOADEE_PATH=\"$(BUILD_DIR)/loadee.elf\" \
+		-DLOADEE_PATH=\"$(LOADEE_RAW)\" \
 		package.S -o $@
 
 $(BUILD_DIR)/%.o: %.s Makefile
 	$(AS) -g -mcpu=$(CPU) $< -o $@
 
-$(BUILD_DIR)/loadee.elf: $(addprefix $(BUILD_DIR)/, $(LOADEE_OBJS))
+$(LOADEE_RAW): $(addprefix $(BUILD_DIR)/, $(LOADEE_OBJS))
 	$(LD) $(LDFLAGS) -Ttext=0x28000 $^ $(LIBS) -o $@
+
+$(STAGE1_LOADER): \
+	$(STAGE1_PAYLOAD) \
+	$(addprefix $(BUILD_DIR)/, $(LOADER_OBJS))
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+# Stage 1 uses the unpatched loadee ELF. The Microkit tool resolves the
+# template PD's build-time symbols and emits symbols/loadee.mktsym.
+$(STAGE1_IMAGE): $(STAGE1_LOADER) empty.system
+	cp $(STAGE1_LOADER) $(BUILD_DIR)/loader.elf
+	$(MICROKIT_TOOL) empty.system --search-path $(BUILD_DIR) \
+		--board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) \
+		-o $(STAGE1_IMAGE) -r $(STAGE1_REPORT)
+
+# Apply the emitted symbol bundle without changing the ELF layout.
+$(BUILD_DIR)/loadee.elf: $(LOADEE_RAW) $(STAGE1_IMAGE) payload-patcher.py
+	python3 payload-patcher.py \
+		$(LOADEE_RAW) $(BUILD_DIR)/symbols/loadee.mktsym $@
+
+$(BUILD_DIR)/payloads.o: $(BUILD_DIR)/loadee.elf package.S
+	$(CC) -c $(CFLAGS) \
+		-DLOADEE_PATH=\"$(BUILD_DIR)/loadee.elf\" \
+		package.S -o $@
 
 $(BUILD_DIR)/loader.elf: \
 		$(BUILD_DIR)/payloads.o \

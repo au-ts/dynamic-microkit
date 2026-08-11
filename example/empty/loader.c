@@ -160,6 +160,7 @@ void init(void)
 
 void notified(microkit_channel ch)
 {
+    microkit_dbg_puts(">> loader: received from loadee, mktsymb tested\n");
 }
 
 seL4_MessageInfo_t protected(microkit_channel ch, microkit_msginfo msginfo)
