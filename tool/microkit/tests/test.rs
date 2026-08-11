@@ -419,6 +419,21 @@ mod protection_domain {
     }
 
     #[test]
+    fn test_setvar_long_symbol() {
+        check_error(
+            &DEFAULT_X86_64_KERNEL_CONFIG,
+            "pd_setvar_long_symbol.system",
+            concat!(
+                "Error: setvar symbol 'testing_0000000000000000000000000000000000000000",
+                "1111111111111111111111111111111111111111111111111111111111111111111111",
+                "2222222222222222222222222222222222222222222222222222222222222222222222",
+                "333333333333333333333333333333333333333333333333333333333333333333333'",
+                " is too long: 257 bytes, maximum is 256 bytes on element 'setvar'"
+            )
+        )
+    }
+
+    #[test]
     fn test_duplicate_program_image() {
         check_error(
             &DEFAULT_AARCH64_KERNEL_CONFIG,

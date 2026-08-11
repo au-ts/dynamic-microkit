@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW.
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+    <memory_region name="mr_with_paddr" size="0x1000" phys_addr="0x8000_0000" />
+    <protection_domain name="setvar" priority="1">
+        <program_image path="setvar.elf" />
+        <map mr="mr_with_paddr" vaddr="0x2000_0000" />
+        <setvar region_paddr="mr_with_paddr" symbol="testing_000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111111111112222222222222222222222222222222222222222222222222222222222222222222222333333333333333333333333333333333333333333333333333333333333333333333" />
+    </protection_domain>
+</system>
