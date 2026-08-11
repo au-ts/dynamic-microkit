@@ -24,7 +24,7 @@ use crate::{
     sdf::{SysMemoryRegion, SysMemoryRegionPaddr, SystemDescription},
     sdk::Sdk,
     sel4::{emulate_kernel_boot, emulate_kernel_boot_partial, Arch, Config, ImageOutputType},
-    symbols::patch_symbols,
+    symbols::{patch_symbols, write_symbol_bundles},
     util::{bail_if_not_exists, get_full_path, human_size_strict, round_down, round_up},
     viper, DisjointMemoryRegion, MemoryRegion,
 };
@@ -193,10 +193,11 @@ pub fn build_system(
         spec_need_refinement = false;
 
         // Patch all the required symbols in the Monitor and PDs according to the Microkit's requirements
-        if let Err(err) = patch_symbols(kernel_config, &mut system_elfs, system) {
-            eprintln!("ERROR: {err}");
-            std::process::exit(1);
-        }
+        let symbol_bundles =
+            patch_symbols(kernel_config, &mut system_elfs, system).unwrap_or_else(|err| {
+                eprintln!("ERROR: {err}");
+                std::process::exit(1);
+            });
 
         let mut spec_container = build_capdl_spec(kernel_config, &mut system_elfs, system)?;
         pack_spec_into_initial_task(
@@ -408,6 +409,18 @@ pub fn build_system(
         };
 
         if !spec_need_refinement {
+            // Emit only after refinement has converged. In particular,
+            // region_paddr setvars may be assigned by the Microkit tool during
+            // an earlier iteration.
+            let output_dir = args
+                .output_path
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or(Path::new("."));
+
+            let symbols_output_dir = output_dir.join("symbols");
+            write_symbol_bundles(&symbols_output_dir, &symbol_bundles)?;
+
             // All is well in the universe, write the image out.
             println!(
                 "MICROKIT|CAPDL SPEC: number of root objects = {}, spec footprint = {}",
