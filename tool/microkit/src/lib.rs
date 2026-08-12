@@ -15,6 +15,7 @@ pub mod argparse;
 pub mod build;
 pub mod capdl;
 pub mod crc32;
+pub mod dlg;
 pub mod elf;
 pub mod loader;
 pub mod report;
