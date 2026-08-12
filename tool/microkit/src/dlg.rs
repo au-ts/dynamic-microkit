@@ -155,7 +155,7 @@ fn build_bundle(system: &SystemDescription, delegatee_idx: usize) -> Result<Vec<
                     flags: 0,
                     slot: (PD_BASE_OUTPUT_NOTIFICATION_CAP + end.id) as u16,
                     cap_count: 1,
-                    arg0: 0,
+                    arg0: end.id,
                     arg1: 0,
                 });
             }
@@ -166,7 +166,7 @@ fn build_bundle(system: &SystemDescription, delegatee_idx: usize) -> Result<Vec<
                     flags: 0,
                     slot: (PD_BASE_OUTPUT_ENDPOINT_CAP + end.id) as u16,
                     cap_count: 1,
-                    arg0: 0,
+                    arg0: end.id,
                     arg1: 0,
                 });
             }
