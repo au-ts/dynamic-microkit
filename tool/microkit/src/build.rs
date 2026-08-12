@@ -18,6 +18,7 @@ use crate::{
         initialiser::CapDLInitialiser,
         packaging::pack_spec_into_initial_task,
     },
+    dlg::write_delegation_bundles,
     elf::ElfFile,
     loader::Loader,
     report::write_report,
@@ -497,6 +498,8 @@ pub fn build_system(
                     );
                 }
             };
+
+            write_delegation_bundles(system, Path::new("build/delegation"))?;
 
             if let Some(capdl_json) = &args.capdl_json_path {
                 let serialised = serde_json::to_string_pretty(&spec_container.spec).unwrap();
