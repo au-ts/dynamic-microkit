@@ -48,6 +48,9 @@ endif
 
 MICROKIT_TOOL ?= $(MICROKIT_SDK)/bin/microkit
 
+PYTHON ?= python3
+SYSTEM_FILE := $(BUILD_DIR)/empty.system
+
 LOADEE_OBJS := loadee.o
 LOADER_OBJS := loader.o
 
@@ -65,6 +68,10 @@ IMAGE_FILE = $(BUILD_DIR)/empty.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
 all: $(IMAGE_FILE)
+
+$(SYSTEM_FILE): meta.py
+	$(PYTHON) meta.py \
+		--sddf $(SDDF) --board $(MICROKIT_BOARD) --sdf $@
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -87,9 +94,9 @@ $(STAGE1_LOADER): \
 
 # Stage 1 uses the unpatched loadee ELF. The Microkit tool resolves the
 # template PD's build-time symbols and emits symbols/loadee.mktsym.
-$(STAGE1_IMAGE): $(STAGE1_LOADER) empty.system
+$(STAGE1_IMAGE): $(STAGE1_LOADER) $(SYSTEM_FILE)
 	cp $(STAGE1_LOADER) $(BUILD_DIR)/loader.elf
-	$(MICROKIT_TOOL) empty.system --search-path $(BUILD_DIR) \
+	$(MICROKIT_TOOL) $(SYSTEM_FILE) --search-path $(BUILD_DIR) \
 		--board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) \
 		-o $(STAGE1_IMAGE) -r $(STAGE1_REPORT)
 
@@ -108,8 +115,8 @@ $(BUILD_DIR)/loader.elf: \
 		$(addprefix $(BUILD_DIR)/, $(LOADER_OBJS))
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
-$(IMAGE_FILE) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) empty.system
-	$(MICROKIT_TOOL) empty.system --search-path $(BUILD_DIR) --board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
+$(IMAGE_FILE) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_FILE)
+	$(MICROKIT_TOOL) $(SYSTEM_FILE) --search-path $(BUILD_DIR) --board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
 
 ifeq ($(ARCH),x86_64)
 qemu: $(KERNEL_32B) $(IMAGE_FILE)
