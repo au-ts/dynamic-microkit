@@ -18,7 +18,10 @@ pub const VCPU_MAX_ID: u64 = PD_MAX_ID;
 
 /// This is the maximum slot allowed for cap maps. This can change if you wish,
 /// but also update the MICROKIT_MAX_USER_CAPS define in `microkit.h`.
-pub const CAP_MAP_MAX_SLOT: u64 = 128;
+pub const CAP_MAP_MAX_SLOT: u64 = 64;
+
+pub const PD_ROOT_CAP_SLOT_RSVD: u64 = 16;
+pub const PD_ROOT_CAP_SLOT_RSVD_START: u64 = CAP_MAP_MAX_SLOT - PD_ROOT_CAP_SLOT_RSVD;
 
 pub const MONITOR_PRIORITY: u8 = 255;
 pub const PD_MAX_PRIORITY: u8 = 254;

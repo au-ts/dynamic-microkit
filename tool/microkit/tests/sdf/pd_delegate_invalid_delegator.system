@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+    <protection_domain name="x" priority="25" delegatee="false">
+        <template name="y" priority="25" allow_delegation="true" />
+    </protection_domain>
+</system>

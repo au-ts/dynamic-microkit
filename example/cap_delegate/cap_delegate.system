@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+    <memory_region name="delegated_mr" size="0x1000" />
+
+    <protection_domain name="delegatee" priority="25" delegatee="true" >
+        <program_image path="delegatee.elf" />
+
+        <protection_domain name="delegator" id="0" priority="20" allow_delegation="true" >
+            <program_image path="delegator.elf" />
+            <map mr="delegated_mr" vaddr="0xC00000" perms="rw" cached="true" delegated="true" />
+        </protection_domain>
+
+    </protection_domain>
+
+    <protection_domain name="server" priority="25" >
+        <program_image path="server.elf" />
+    </protection_domain>
+
+    <channel>
+        <end pd="server" id="0" />
+        <end pd="delegator" id="0" delegated="true" />
+    </channel>
+
+    <channel>
+        <end pd="delegatee" id="1" />
+        <end pd="delegator" id="1" pp="true" />
+    </channel>
+
+</system>

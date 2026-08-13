@@ -96,10 +96,24 @@ const PD_BASE_IOPORT_CAP: u64 = PD_BASE_VCPU_CAP + 64;
 /* This should be kept in sync with `PD_ROOT_CAP_BITS` in libmicrokit/include/microkit.h */
 const PD_ROOT_CAP_SIZE: u32 = 64;
 const PD_ROOT_CAP_BITS: u8 = PD_ROOT_CAP_SIZE.ilog2() as u8;
+
+const PD_ROOT_CAP_SLOT_RSVD: u32 = 16;
+const PD_ROOT_CAP_SLOT_RSVD_START: u32 = PD_ROOT_CAP_SIZE - PD_ROOT_CAP_SLOT_RSVD;
+
 pub const PD_CAP_SIZE: u32 = 512;
 const PD_CAP_BITS: u8 = PD_CAP_SIZE.ilog2() as u8;
 const PD_SCHEDCONTEXT_EXTRA_SIZE: u64 = 256;
 const PD_SCHEDCONTEXT_EXTRA_SIZE_BITS: u64 = PD_SCHEDCONTEXT_EXTRA_SIZE.ilog2() as u64;
+
+const DLG_CNODE_SELF_CNODE_CAP: u32 = 0;
+const DLG_CNODE_DGTR_MK_CNODE_CAP: u32 = 1;
+const DLG_CNODE_DGTR_RT_CNODE_CAP: u32 = 2;
+const DLG_CNODE_DGTR_DL_CNODE_CAP: u32 = 3;
+const DLG_CNODE_DGTR_VSPACE_CAP: u32 = 4;
+
+const DLG_PPC_CAP: u32 = PD_BASE_OUTPUT_ENDPOINT_CAP as u32;
+const DLG_MR_CAP: u32 = DLG_PPC_CAP + 64;
+const DLG_MR_CAP_END: u32 = PD_BASE_IOPORT_CAP as u32;
 
 pub const SLOT_BITS: u64 = 5;
 pub const SLOT_SIZE: u64 = 1 << SLOT_BITS;
@@ -303,6 +317,7 @@ impl CapDLSpecContainer {
                     frame_cap,
                     page_size_bytes,
                     cur_vaddr,
+                    false, /* MR for provided elf cannot be delegated */
                 ) {
                     Ok(_) => {
                         frame_sequence += 1;
@@ -361,18 +376,36 @@ fn map_memory_region<M: Map>(
     page_sz: u64,
     target_address_space: &AddressSpace,
     frames: &[ObjectId],
+    mut delegation: Option<(&mut Vec<CapTableEntry>, u32)>,
 ) -> Result<(), String> {
     let mut cur_vaddr = map.addr();
     let read = map.read();
     let write = map.write();
     let execute = map.execute();
+    let delegated = map.delegated();
+    if delegated != delegation.is_some() {
+        return Err(format!(
+            "invalid delegation arguments for {} '{}': delegated={}, delegation={}",
+            map.element(),
+            map.mr_name(),
+            delegated,
+            delegation.is_some(),
+        ));
+    }
     for frame_obj_id in frames.iter() {
         // Make a cap for this frame.
         let frame_cap =
             capdl_util_make_frame_cap(*frame_obj_id, read, write, execute, map.cached());
         // Map it into this PD address space.
         target_address_space
-            .map_page(spec_container, sel4_config, frame_cap, page_sz, cur_vaddr)
+            .map_page(
+                spec_container,
+                sel4_config,
+                frame_cap.clone(),
+                page_sz,
+                cur_vaddr,
+                delegated,
+            )
             .map_err(|err| {
                 format!(
                     "failed to map {} for MR '{}' into address-space '{}' at {} {:#x}: {err}",
@@ -384,6 +417,15 @@ fn map_memory_region<M: Map>(
                 )
             })?;
         cur_vaddr += page_sz;
+
+        if let Some((cnode, slot)) = delegation.as_mut() {
+            assert!(
+                *slot < DLG_MR_CAP_END,
+                "delegated MR capabilities exceed reserved delegation CNode range"
+            );
+            cnode.push(capdl_util_make_cte(*slot, frame_cap));
+            *slot += 1;
+        }
     }
     Ok(())
 }
@@ -468,6 +510,7 @@ pub fn build_capdl_spec(
             mon_stack_frame_cap,
             PageSize::Small as u64,
             kernel_config.pd_stack_bottom(MON_STACK_SIZE),
+            false,
         )
         .unwrap();
 
@@ -489,6 +532,7 @@ pub fn build_capdl_spec(
             mon_ipcbuf_frame_cap.clone(),
             PageSize::Small as u64,
             kernel_config.pd_ipc_buffer(),
+            false,
         )
         .expect("should be able to map the IPC buffer as we checked overlaps in sel4.rs");
 
@@ -627,11 +671,15 @@ pub fn build_capdl_spec(
     // Keep tabs on each PD's stack bottom so we can write it out to the monitor for stack overflow detection.
     let mut pd_stack_bottoms: Vec<u64> = Vec::new();
 
+    let mut delegation_cnodes: HashMap<usize, ObjectId> = HashMap::new();
+    let mut delegation_cnode_caps: HashMap<usize, Vec<CapTableEntry>> = HashMap::new();
+
     for (pd_global_idx, pd) in system.protection_domains.iter().enumerate() {
         let elf_obj = &elfs[pd_global_idx];
 
         let mut caps_to_bind_to_tcb: Vec<CapTableEntry> = Vec::new();
         let mut caps_to_insert_to_pd_cspace: Vec<CapTableEntry> = Vec::new();
+        let mut caps_to_insert_to_pd_delegation_cnode: Vec<CapTableEntry> = Vec::new();
 
         // Step 3-1: Create TCB and VSpace with all ELF loadable frames mapped in.
         let pd_elf_spec = spec_container
@@ -656,7 +704,15 @@ pub fn build_capdl_spec(
             capdl_util_make_page_table_cap(pd_vspace_obj_id),
         ));
 
+        if pd.allow_delegation {
+            caps_to_insert_to_pd_delegation_cnode.push(capdl_util_make_cte(
+                DLG_CNODE_DGTR_VSPACE_CAP,
+                capdl_util_make_page_table_cap(pd_vspace_obj_id),
+            ))
+        }
+
         // Step 3-2: Map in all Memory Regions
+        let mut next_delegated_mr_cap = DLG_MR_CAP;
         for map in pd.maps.iter() {
             let frames = &mr_name_to_frames[&map.mr];
             // MRs have frames of equal size so just use the first frame's page size.
@@ -681,14 +737,31 @@ pub fn build_capdl_spec(
                 }
             }
 
-            map_memory_region(
-                &mut spec_container,
-                kernel_config,
-                map,
-                page_size_bytes,
-                &pd_elf_spec.address_space,
-                frames,
-            )?;
+            if map.delegated() {
+                map_memory_region(
+                    &mut spec_container,
+                    kernel_config,
+                    map,
+                    page_size_bytes,
+                    &pd_elf_spec.address_space,
+                    frames,
+                    Some((
+                        &mut caps_to_insert_to_pd_delegation_cnode,
+                        next_delegated_mr_cap,
+                    )),
+                )?;
+                next_delegated_mr_cap += frames.len() as u32;
+            } else {
+                map_memory_region(
+                    &mut spec_container,
+                    kernel_config,
+                    map,
+                    page_size_bytes,
+                    &pd_elf_spec.address_space,
+                    frames,
+                    None,
+                )?;
+            }
         }
 
         // Step 3-3a: Create and map in the IPC buffer
@@ -709,6 +782,7 @@ pub fn build_capdl_spec(
                 ipcbuf_frame_cap.clone(),
                 PageSize::Small as u64,
                 kernel_config.pd_ipc_buffer(),
+                false, /* ipc buffer should never be delegated */
             )
             .expect("should be able to map the IPC buffer as we checked overlaps in sel4.rs");
         caps_to_bind_to_tcb.push(capdl_util_make_cte(
@@ -740,6 +814,7 @@ pub fn build_capdl_spec(
                     stack_frame_cap,
                     PageSize::Small as u64,
                     cur_stack_vaddr,
+                    false, /* default stack should never be delegated*/
                 )
                 .unwrap();
             cur_stack_vaddr += PageSize::Small as u64;
@@ -861,10 +936,13 @@ pub fn build_capdl_spec(
             let ioport_obj_id =
                 capdl_util_make_ioport_obj(&mut spec_container, &pd.name, ioport.addr, ioport.size);
             let ioport_cap = capdl_util_make_ioport_cap(ioport_obj_id);
-            caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(
-                (PD_BASE_IOPORT_CAP + ioport.id) as u32,
-                ioport_cap,
-            ));
+            let ioport_cap_idx = (PD_BASE_IOPORT_CAP + ioport.id) as u32;
+            if ioport.delegated {
+                caps_to_insert_to_pd_delegation_cnode
+                    .push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
+            } else {
+                caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
+            }
         }
 
         // Step 3-11 Create VM Spec.
@@ -893,6 +971,7 @@ pub fn build_capdl_spec(
                     page_size_bytes,
                     &vm_address_space,
                     frames,
+                    None, /* VM does not support delegated MR now */
                 )?;
             }
 
@@ -1150,6 +1229,107 @@ pub fn build_capdl_spec(
                 tcb: pd_tcb_obj_id,
             },
         );
+
+        if pd.allow_delegation {
+            delegation_cnode_caps.insert(pd_global_idx, caps_to_insert_to_pd_delegation_cnode);
+        }
+    }
+
+    // Step 3-16. Create delegation CNodes
+    for (delegatee_idx, pd_delegatee) in system
+        .protection_domains
+        .iter()
+        .enumerate()
+        .filter(|(_, pd)| pd.delegatee)
+    {
+        let pd_delegators: Vec<(usize, _)> = system
+            .protection_domains
+            .iter()
+            .enumerate()
+            .filter(|(_, child)| child.parent == Some(delegatee_idx) && child.allow_delegation)
+            .collect();
+
+        if pd_delegators.len() > PD_ROOT_CAP_SLOT_RSVD as usize {
+            return Err(format!(
+                "ERROR: delegatee PD '{}' has {} children with allow_delegation, \
+                but only {} delegation CNode slots are available",
+                pd_delegatee.name,
+                pd_delegators.len(),
+                PD_ROOT_CAP_SLOT_RSVD,
+            ));
+        }
+
+        let delegatee_cspace = &pd_shadow_cspaces[&delegatee_idx];
+
+        for (slot_offset, (id_delegator, pd_delegator)) in pd_delegators.into_iter().enumerate() {
+            let caps = delegation_cnode_caps
+                .remove(&id_delegator)
+                .unwrap_or_default();
+
+            let delegation_cnode = capdl_util_make_cnode_obj(
+                &mut spec_container,
+                &format!(
+                    "delegation_cnode_{}_{}",
+                    pd_delegatee.name, pd_delegator.name
+                ),
+                PD_CAP_BITS,
+                caps,
+            );
+
+            let guard_size =
+                kernel_config.cap_address_bits - PD_ROOT_CAP_BITS as u64 - 2 * PD_CAP_BITS as u64;
+
+            // Slot 0: self-reference.
+            capdl_util_insert_cap_into_cspace(
+                &mut spec_container,
+                delegation_cnode,
+                DLG_CNODE_SELF_CNODE_CAP,
+                capdl_util_make_cnode_cap(delegation_cnode, 0, guard_size as u8),
+            );
+
+            // Slot 1: microkit CNode of the delegator PD.
+            let delegator_cspace = &pd_shadow_cspaces[&id_delegator];
+            capdl_util_insert_cap_into_cspace(
+                &mut spec_container,
+                delegation_cnode,
+                DLG_CNODE_DGTR_MK_CNODE_CAP,
+                capdl_util_make_cnode_cap(
+                    delegator_cspace.microkit_cnode,
+                    0,
+                    0, /* guard_size */
+                ),
+            );
+
+            // Slot 2: root CNode of the delegator PD.
+            capdl_util_insert_cap_into_cspace(
+                &mut spec_container,
+                delegation_cnode,
+                DLG_CNODE_DGTR_RT_CNODE_CAP,
+                capdl_util_make_cnode_cap(delegator_cspace.cspace, 0, 0 /* guard_size */),
+            );
+
+            // Slot 3: delegation CNode cap for granting to the delegator PD.
+            let delegatee_guard_size =
+                kernel_config.cap_address_bits - PD_ROOT_CAP_BITS as u64 - PD_CAP_BITS as u64;
+
+            capdl_util_insert_cap_into_cspace(
+                &mut spec_container,
+                delegation_cnode,
+                DLG_CNODE_DGTR_DL_CNODE_CAP,
+                capdl_util_make_cnode_cap(delegation_cnode, 0, delegatee_guard_size as u8),
+            );
+
+            // allow the delegatees to access the delegation cnodes
+            delegatee_cspace.insert_cap_into_root_cnode(
+                &mut spec_container,
+                PD_ROOT_CAP_SLOT_RSVD_START + slot_offset as u32,
+                capdl_util_make_cnode_cap(delegation_cnode, 0, delegatee_guard_size as u8),
+            );
+
+            // records each delegation(delegatee, delegator) pair
+            // (the delegatee is implicitly recorded as the parent of delegator)
+            delegation_cnodes.insert(id_delegator, delegation_cnode);
+        }
     }
 
     // *********************************
@@ -1166,22 +1346,40 @@ pub fn build_capdl_spec(
             let pd_a_ntfn_cap_idx = PD_BASE_OUTPUT_NOTIFICATION_CAP + channel.end_a.id;
             let pd_a_ntfn_badge = 1 << channel.end_b.id;
             let pd_a_ntfn_cap = capdl_util_make_ntfn_cap(pd_b_ntfn_id, true, true, pd_a_ntfn_badge);
-            pd_a_shadow_cspace.insert_cap_into_microkit_cnode(
-                &mut spec_container,
-                pd_a_ntfn_cap_idx as u32,
-                pd_a_ntfn_cap,
-            );
+            if channel.end_a.delegated {
+                capdl_util_insert_cap_into_cspace(
+                    &mut spec_container,
+                    delegation_cnodes[&channel.end_a.pd],
+                    pd_a_ntfn_cap_idx as u32,
+                    pd_a_ntfn_cap,
+                );
+            } else {
+                pd_a_shadow_cspace.insert_cap_into_microkit_cnode(
+                    &mut spec_container,
+                    pd_a_ntfn_cap_idx as u32,
+                    pd_a_ntfn_cap,
+                );
+            }
         }
 
         if channel.end_b.notify {
             let pd_b_ntfn_cap_idx = PD_BASE_OUTPUT_NOTIFICATION_CAP + channel.end_b.id;
             let pd_b_ntfn_badge = 1 << channel.end_a.id;
             let pd_b_ntfn_cap = capdl_util_make_ntfn_cap(pd_a_ntfn_id, true, true, pd_b_ntfn_badge);
-            pd_b_shadow_cspace.insert_cap_into_microkit_cnode(
-                &mut spec_container,
-                pd_b_ntfn_cap_idx as u32,
-                pd_b_ntfn_cap,
-            );
+            if channel.end_b.delegated {
+                capdl_util_insert_cap_into_cspace(
+                    &mut spec_container,
+                    delegation_cnodes[&channel.end_b.pd],
+                    pd_b_ntfn_cap_idx as u32,
+                    pd_b_ntfn_cap,
+                );
+            } else {
+                pd_b_shadow_cspace.insert_cap_into_microkit_cnode(
+                    &mut spec_container,
+                    pd_b_ntfn_cap_idx as u32,
+                    pd_b_ntfn_cap,
+                );
+            }
         }
 
         if channel.end_a.pp {
@@ -1192,11 +1390,20 @@ pub fn build_capdl_spec(
                 .expect("exists as needs_ep() is true");
             let pd_a_ep_cap =
                 capdl_util_make_endpoint_cap(pd_b_ep_id, true, true, true, pd_a_ep_badge);
-            pd_a_shadow_cspace.insert_cap_into_microkit_cnode(
-                &mut spec_container,
-                pd_a_ep_cap_idx as u32,
-                pd_a_ep_cap,
-            );
+            if channel.end_a.delegated {
+                capdl_util_insert_cap_into_cspace(
+                    &mut spec_container,
+                    delegation_cnodes[&channel.end_a.pd],
+                    pd_a_ep_cap_idx as u32,
+                    pd_a_ep_cap,
+                );
+            } else {
+                pd_a_shadow_cspace.insert_cap_into_microkit_cnode(
+                    &mut spec_container,
+                    pd_a_ep_cap_idx as u32,
+                    pd_a_ep_cap,
+                );
+            }
         }
 
         if channel.end_b.pp {
@@ -1207,11 +1414,20 @@ pub fn build_capdl_spec(
                 .expect("exists as needs_ep() is true");
             let pd_b_ep_cap =
                 capdl_util_make_endpoint_cap(pd_a_ep_id, true, true, true, pd_b_ep_badge);
-            pd_b_shadow_cspace.insert_cap_into_microkit_cnode(
-                &mut spec_container,
-                pd_b_ep_cap_idx as u32,
-                pd_b_ep_cap,
-            );
+            if channel.end_b.delegated {
+                capdl_util_insert_cap_into_cspace(
+                    &mut spec_container,
+                    delegation_cnodes[&channel.end_b.pd],
+                    pd_b_ep_cap_idx as u32,
+                    pd_b_ep_cap,
+                );
+            } else {
+                pd_b_shadow_cspace.insert_cap_into_microkit_cnode(
+                    &mut spec_container,
+                    pd_b_ep_cap_idx as u32,
+                    pd_b_ep_cap,
+                );
+            }
         }
     }
 
@@ -1249,6 +1465,7 @@ pub fn build_capdl_spec(
             page_size_bytes,
             address_space,
             &mr_name_to_frames[&iomap.mr],
+            None, /* IOMMU does not support delegated MR now */
         )?;
     }
 
