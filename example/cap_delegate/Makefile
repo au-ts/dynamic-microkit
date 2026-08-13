@@ -48,6 +48,8 @@ endif
 
 MICROKIT_TOOL ?= $(MICROKIT_SDK)/bin/microkit
 
+PYTHON ?= python3
+
 DELEGATOR_OBJS := delegator.o
 DELEGATEE_OBJS := delegatee.o
 SERVER_OBJS := server.o
@@ -58,10 +60,15 @@ LDFLAGS := -L$(BOARD_DIR)/lib
 LIBS := -lmicrokit -Tmicrokit.ld
 
 APP_NAME := cap_delegate
+SYSTEM_FILE := $(BUILD_DIR)/$(APP_NAME).system
 IMAGE_FILE = $(BUILD_DIR)/$(APP_NAME).img
 REPORT_FILE = $(BUILD_DIR)/report.txt
 
 all: $(IMAGE_FILE)
+
+$(SYSTEM_FILE): meta.py
+	$(PYTHON) meta.py \
+		--sddf $(SDDF) --board $(MICROKIT_BOARD) --sdf $@
 
 $(BUILD_DIR)/%.o: %.c Makefile
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -78,8 +85,8 @@ $(BUILD_DIR)/delegator.elf: $(addprefix $(BUILD_DIR)/, $(DELEGATOR_OBJS))
 $(BUILD_DIR)/delegatee.elf: $(addprefix $(BUILD_DIR)/, $(DELEGATEE_OBJS))
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
-$(IMAGE_FILE) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(APP_NAME).system
-	$(MICROKIT_TOOL) $(APP_NAME).system --search-path $(BUILD_DIR) --board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
+$(IMAGE_FILE) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_FILE)
+	$(MICROKIT_TOOL) $(SYSTEM_FILE) --search-path $(BUILD_DIR) --board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
 
 ifeq ($(ARCH),x86_64)
 qemu: $(KERNEL_32B) $(IMAGE_FILE)
