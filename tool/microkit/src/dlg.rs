@@ -8,7 +8,7 @@ use std::{fs, path::Path};
 
 use crate::{
     capdl::builder::{
-        DLG_MR_CAP, PD_BASE_IOPORT_CAP, PD_BASE_OUTPUT_ENDPOINT_CAP,
+        DLG_MR_CAP, DLG_IOPORT_CAP, PD_BASE_OUTPUT_ENDPOINT_CAP,
         PD_BASE_OUTPUT_NOTIFICATION_CAP, PD_ROOT_CAP_SLOT_RSVD_START,
     },
     sdf::SystemDescription,
@@ -25,7 +25,7 @@ struct Resource {
     kind: u8,
     flags: u8,
     slot: u16,
-    cap_count: u8,
+    cap_count: u16,
     arg0: u64,
     arg1: u64,
 }
@@ -48,14 +48,14 @@ fn resource_push(buf: &mut Vec<u8>, resource: &Resource) {
     //   u8  kind
     //   u8  flags
     //   u16 slot
-    //   u8  cap_count
+    //   u16 cap_count
     //   u64 arg0
     //   u64 arg1
     //
     buf.push(resource.kind);
     buf.push(resource.flags);
     put_u16(buf, resource.slot);
-    buf.push(resource.cap_count);
+    put_u16(buf, resource.cap_count);
     put_u64(buf, resource.arg0);
     put_u64(buf, resource.arg1);
 }
@@ -100,7 +100,7 @@ fn build_bundle(system: &SystemDescription, delegatee_idx: usize) -> Result<Vec<
             // however, here we can assume the page count is very small, as large counts
             // could have been rejected by the CapDL spec builder during the memory management
             // simulation process...
-            let cap_count: u8 = mr
+            let cap_count: u16 = mr
                 .page_count
                 .try_into()
                 .map_err(|_| "delegated MR contains too many pages".to_string())?;
@@ -120,7 +120,7 @@ fn build_bundle(system: &SystemDescription, delegatee_idx: usize) -> Result<Vec<
             });
 
             // we assume spec builder has checked the slot boundary for us
-            next_mr_cap += cap_count as u16;
+            next_mr_cap += cap_count;
         }
 
         // Delegated x86 I/O ports.
@@ -128,7 +128,7 @@ fn build_bundle(system: &SystemDescription, delegatee_idx: usize) -> Result<Vec<
             resources.push(Resource {
                 kind: RESOURCE_IOPORT,
                 flags: 0,
-                slot: (PD_BASE_IOPORT_CAP + ioport.id) as u16,
+                slot: (DLG_IOPORT_CAP + ioport.id) as u16,
                 cap_count: 1,
                 arg0: ioport.addr,
                 arg1: ioport.size,
