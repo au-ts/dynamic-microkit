@@ -91,7 +91,7 @@ const PD_BASE_IRQ_CAP: u64 = PD_BASE_OUTPUT_ENDPOINT_CAP + 64;
 const PD_BASE_PD_TCB_CAP: u64 = PD_BASE_IRQ_CAP + 64;
 const PD_BASE_VM_TCB_CAP: u64 = PD_BASE_PD_TCB_CAP + 64;
 const PD_BASE_VCPU_CAP: u64 = PD_BASE_VM_TCB_CAP + 64;
-pub(crate) const PD_BASE_IOPORT_CAP: u64 = PD_BASE_VCPU_CAP + 64;
+const PD_BASE_IOPORT_CAP: u64 = PD_BASE_VCPU_CAP + 64;
 
 /* This should be kept in sync with `PD_ROOT_CAP_BITS` in libmicrokit/include/microkit.h */
 const PD_ROOT_CAP_SIZE: u32 = 64;
@@ -113,7 +113,8 @@ const DLG_CNODE_DGTR_VSPACE_CAP: u32 = 4;
 
 const DLG_PPC_CAP: u32 = PD_BASE_OUTPUT_ENDPOINT_CAP as u32;
 pub(crate) const DLG_MR_CAP: u32 = DLG_PPC_CAP + 64;
-const DLG_MR_CAP_END: u32 = PD_BASE_IOPORT_CAP as u32;
+pub(crate) const DLG_IOPORT_CAP: u64 = PD_CAP_SIZE as u64 - 64;
+const DLG_MR_CAP_END: u32 = DLG_IOPORT_CAP as u32;
 
 pub const SLOT_BITS: u64 = 5;
 pub const SLOT_SIZE: u64 = 1 << SLOT_BITS;
@@ -421,7 +422,13 @@ fn map_memory_region<M: Map>(
         if let Some((cnode, slot)) = delegation.as_mut() {
             assert!(
                 *slot < DLG_MR_CAP_END,
-                "delegated MR capabilities exceed reserved delegation CNode range"
+                "delegated MR capabilities exceed reserved delegation CNode range: \
+                slot={}, end={}, MR='{}', frame_obj_id={:?}, vaddr={:#x}",
+                *slot,
+                DLG_MR_CAP_END,
+                map.mr_name(),
+                frame_obj_id,
+                cur_vaddr - page_sz,
             );
             cnode.push(capdl_util_make_cte(*slot, frame_cap));
             *slot += 1;
@@ -961,11 +968,12 @@ pub fn build_capdl_spec(
             let ioport_obj_id =
                 capdl_util_make_ioport_obj(&mut spec_container, &pd.name, ioport.addr, ioport.size);
             let ioport_cap = capdl_util_make_ioport_cap(ioport_obj_id);
-            let ioport_cap_idx = (PD_BASE_IOPORT_CAP + ioport.id) as u32;
             if ioport.delegated {
+                let ioport_cap_idx = (DLG_IOPORT_CAP + ioport.id) as u32;
                 caps_to_insert_to_pd_delegation_cnode
                     .push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
             } else {
+                let ioport_cap_idx = (PD_BASE_IOPORT_CAP + ioport.id) as u32;
                 caps_to_insert_to_pd_cspace.push(capdl_util_make_cte(ioport_cap_idx, ioport_cap));
             }
         }
