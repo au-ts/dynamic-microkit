@@ -45,7 +45,7 @@ DEFAULT_X86_NUM_CPUS = 16
 
 DEFAULT_KERNEL_OPTIONS: KERNEL_OPTIONS = {
     "KernelIsMCS": True,
-    "KernelRootCNodeSizeBits": "17",
+    "KernelRootCNodeSizeBits": "20",
     # Thread local storage is painful and annoying to configure.
     # We'd really rather NOT use thread local storage (especially
     # considering we never have more than one thread in a VSpace)
@@ -500,9 +500,14 @@ SUPPORTED_CONFIGS = (
         kernel_options_arch={
             KernelArch.AARCH64: {
                 "HardwareDebugAPI": True,
+                "KernelArmExportPMUUser": True,
+                "KernelArmAbsMap": True,
             },
             KernelArch.X86_64: {
                 "HardwareDebugAPI": True,
+                "KernelExportPMCUser": True,
+                "KernelX86DangerousMSR": True,
+                "KernelX86AbsMap": True,
             }
         },
     ),
