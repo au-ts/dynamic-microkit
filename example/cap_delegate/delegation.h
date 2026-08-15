@@ -7,7 +7,7 @@
 #include <microkit.h>
 
 // Size of microkit/delegation CNode
-#define MK_CAP_BITS 9
+#define MK_CAP_BITS 10
 // Size of root CNode
 #define ROOT_CAP_BITS 6
 
