@@ -66,6 +66,7 @@ LIBS := -lmicrokit -Tmicrokit.ld
 
 IMAGE_FILE = $(BUILD_DIR)/empty.img
 REPORT_FILE = $(BUILD_DIR)/report.txt
+KERNEL_32B = $(BUILD_DIR)/sel4_32.elf
 
 all: $(IMAGE_FILE)
 
@@ -115,7 +116,7 @@ $(BUILD_DIR)/loader.elf: \
 		$(addprefix $(BUILD_DIR)/, $(LOADER_OBJS))
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
-$(IMAGE_FILE) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_FILE)
+$(IMAGE_FILE) $(KERNEL_32B) $(REPORT_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_FILE)
 	$(MICROKIT_TOOL) $(SYSTEM_FILE) --search-path $(BUILD_DIR) --board $(MICROKIT_BOARD) --config $(MICROKIT_CONFIG) -o $(IMAGE_FILE) -r $(REPORT_FILE)
 
 ifeq ($(ARCH),x86_64)
