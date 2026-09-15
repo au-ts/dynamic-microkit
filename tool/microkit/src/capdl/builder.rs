@@ -1227,7 +1227,10 @@ pub fn build_capdl_spec(
             pd_tcb.extra.prio = pd.priority();
             pd_tcb.extra.max_prio = pd.priority();
             pd_tcb.extra.fpu_disabled = !pd.fpu;
-            pd_tcb.extra.resume = true;
+            // Templates deliberately have no program image. Keep their TCBs
+            // suspended until the parent installs a payload and restarts them;
+            // otherwise they immediately execute at address zero and fault.
+            pd_tcb.extra.resume = pd.program_image.is_some();
             pd_tcb.extra.domain = pd.domain;
 
             pd_tcb.slots.extend(caps_to_bind_to_tcb);
