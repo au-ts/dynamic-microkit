@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Copyright 2026, UNSW
+
+ SPDX-License-Identifier: BSD-2-Clause
+-->
+<system>
+
+    <protection_domain name="loader" priority="25">
+        <program_image path="loader.elf" />
+        <protection_domain name="loadee" id="0" priority="20" delegatee="true" >
+            <program_image path="loadee.elf" />
+        </protection_domain>
+    </protection_domain>
+
+</system>

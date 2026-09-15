@@ -16,8 +16,8 @@ use super::irq::{SysIrq, SysIrqKind};
 use super::memory_region::SysMap;
 use super::pci::PciDevice;
 use super::util::{
-    check_attributes, checked_add_setvar, checked_lookup, ensure_setvar_allowed, loc_string,
-    sdf_parse_number, value_error,
+    check_attributes, checked_add_setvar, checked_lookup, ensure_delegation_allowed,
+    ensure_setvar_allowed, loc_string, sdf_parse_number, value_error,
 };
 use super::{SdfLocation, SdfNode, SystemDescriptionFile};
 
@@ -47,6 +47,7 @@ pub struct IOPort {
     pub addr: u64,
     pub size: u64,
     pub text_pos: SdfLocation,
+    pub delegated: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -83,6 +84,8 @@ pub struct ProtectionDomain {
     pub sched_params: SchedulingParams,
     pub passive: bool,
     pub stack_size: u64,
+    pub delegatee: bool,
+    pub allow_delegation: bool,
     pub smc: bool,
     pub cpu: CpuCore,
     pub domain: Option<u8>,
@@ -148,6 +151,7 @@ impl ProtectionDomain {
         xml_sdf: &SystemDescriptionFile,
         node: &dyn SdfNode,
         role: ProtectionDomainRole,
+        has_delegatee: bool,
         domains: &Domains,
     ) -> Result<ProtectionDomain, String> {
         let mut attrs = vec![
@@ -157,6 +161,8 @@ impl ProtectionDomain {
             "period",
             "passive",
             "stack_size",
+            "delegatee",
+            "allow_delegation",
             // The SMC field is only available in certain configurations
             // but we do the error-checking further down.
             "smc",
@@ -176,6 +182,38 @@ impl ProtectionDomain {
             ProtectionDomainRole::Normal => {}
         }
         check_attributes(xml_sdf, node, &attrs)?;
+
+        let allow_delegation = if let Some(xml_delegation) = node.attribute("allow_delegation") {
+            match str_to_bool(xml_delegation) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "allow_delegation must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
+        };
+
+        if allow_delegation {
+            if role == ProtectionDomainRole::Normal {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "Resource delegation is not allowed to a PD without a parent.".to_string(),
+                ));
+            } else if !has_delegatee {
+                return Err(value_error(
+                    xml_sdf,
+                    node,
+                    "Resource delegation is not allowed to the child of a non-delegatee PD"
+                        .to_string(),
+                ));
+            }
+        };
 
         let name = checked_lookup(xml_sdf, node, "name")?.to_string();
 
@@ -249,6 +287,33 @@ impl ProtectionDomain {
                 xml_sdf,
                 node,
                 "passive must be 'false'".to_string(),
+            ));
+        }
+
+        let delegatee = if let Some(xml_delegatee) = node.attribute("delegatee") {
+            match str_to_bool(xml_delegatee) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "delegatee must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
+        };
+        //
+        // If a protection domain is a 'delegatee', it will receive the ability
+        // to access (some) resources of a 'delegator' pd, which should be set
+        // to be the child/template pds of the delegatee.
+        //
+        if delegatee && role != ProtectionDomainRole::Normal {
+            return Err(value_error(
+                xml_sdf,
+                node,
+                "A child/template PD cannot be a delegatee".to_string(),
             ));
         }
 
@@ -420,8 +485,13 @@ impl ProtectionDomain {
                         child.attribute("path_for_symbols").map(PathBuf::from);
                 }
                 "map" => {
+                    if child.attribute("delegated").is_some() {
+                        ensure_delegation_allowed(allow_delegation, xml_sdf, &*child)?;
+                    };
+
                     let map_max_vaddr = config.pd_map_max_vaddr(stack_size);
-                    let map = SysMap::from_xml(xml_sdf, &*child, true, map_max_vaddr)?;
+                    let map =
+                        SysMap::from_xml(xml_sdf, &*child, true, allow_delegation, map_max_vaddr)?;
 
                     if let Some(setvar_vaddr) = child.attribute("setvar_vaddr") {
                         ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
@@ -466,6 +536,14 @@ impl ProtectionDomain {
                     if id < 0 {
                         return Err(value_error(xml_sdf, &*child, "id must be >= 0".to_string()));
                     }
+
+                    if child.attribute("delegated").is_some() {
+                        return Err(value_error(
+                            xml_sdf,
+                            &*child,
+                            "IRQ delegation is not supported".to_string(),
+                        ));
+                    };
 
                     if let Some(setvar_id) = child.attribute("setvar_id") {
                         ensure_setvar_allowed(role.clone(), sym_emit, xml_sdf, &*child)?;
@@ -679,8 +757,32 @@ impl ProtectionDomain {
                         check_attributes(
                             xml_sdf,
                             &*child,
-                            &["id", "setvar_id", "setvar_addr", "addr", "size"],
+                            &[
+                                "id",
+                                "setvar_id",
+                                "setvar_addr",
+                                "addr",
+                                "size",
+                                "delegated",
+                            ],
                         )?;
+                        if child.attribute("delegated").is_some() {
+                            ensure_delegation_allowed(allow_delegation, xml_sdf, &*child)?;
+                        };
+                        let delegated = if let Some(xml_delegated) = child.attribute("delegated") {
+                            match str_to_bool(xml_delegated) {
+                                Some(val) => val,
+                                None => {
+                                    return Err(value_error(
+                                        xml_sdf,
+                                        &*child,
+                                        "delegated must be 'true' or 'false'".to_string(),
+                                    ))
+                                }
+                            }
+                        } else {
+                            false
+                        };
 
                         let id = checked_lookup(xml_sdf, &*child, "id")?
                             .parse::<i64>()
@@ -737,6 +839,7 @@ impl ProtectionDomain {
                             addr,
                             size: size as u64,
                             text_pos: node.range().start,
+                            delegated,
                         })
                     } else {
                         return Err(value_error(
@@ -769,11 +872,14 @@ impl ProtectionDomain {
                         ));
                     }
 
+                    // if the 'delegatee' attribute is set and valid,
+                    // child PDs are allowed to delegate their 'delegated' caps
                     let child_pd = ProtectionDomain::from_xml(
                         config,
                         xml_sdf,
                         &*child,
                         ProtectionDomainRole::Child,
+                        delegatee,
                         domains,
                     )?;
 
@@ -799,11 +905,14 @@ impl ProtectionDomain {
                         ));
                     }
 
+                    // if the 'delegatee' attribute is set and valid,
+                    // child PDs are allowed to delegate their 'delegated' caps
                     let child_pd = ProtectionDomain::from_xml(
                         config,
                         xml_sdf,
                         &*child,
                         ProtectionDomainRole::Template,
+                        delegatee,
                         domains,
                     )?;
 
@@ -855,7 +964,7 @@ impl ProtectionDomain {
                         ));
                     }
 
-                    cspace = Some(CSpace::from_xml(xml_sdf, &*child)?);
+                    cspace = Some(CSpace::from_xml(xml_sdf, &*child, delegatee)?);
                 }
                 _ => {
                     let pos = child.range().start;
@@ -888,6 +997,8 @@ impl ProtectionDomain {
             },
             passive,
             stack_size,
+            delegatee,
+            allow_delegation,
             smc,
             cpu,
             domain,
@@ -1111,7 +1222,13 @@ impl VirtualMachine {
                 "map" => {
                     // Virtual machines do not have program images and so we do not allow
                     // setvar_vaddr on SysMap
-                    let map = SysMap::from_xml(xml_sdf, &*child, false, config.vm_map_max_vaddr())?;
+                    let map = SysMap::from_xml(
+                        xml_sdf,
+                        &*child,
+                        false,
+                        false,
+                        config.vm_map_max_vaddr(),
+                    )?;
                     maps.push(map);
                 }
                 _ => {

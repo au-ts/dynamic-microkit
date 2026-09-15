@@ -183,6 +183,7 @@ pub fn parse(
                 &xml_sdf,
                 &*child,
                 ProtectionDomainRole::Normal,
+                false, /* top-level PDs have no delegatee */
                 &domains,
             )?),
             "channel" => channel_nodes.push(child),

@@ -6,7 +6,9 @@
 
 use super::consts::*;
 use super::pd_vm::ProtectionDomain;
-use super::util::{check_attributes, checked_lookup, loc_string, value_error};
+use super::util::{
+    check_attributes, checked_lookup, ensure_delegation_allowed, loc_string, value_error,
+};
 use super::{SdfNode, SystemDescriptionFile};
 
 use crate::util::str_to_bool;
@@ -18,6 +20,7 @@ pub struct ChannelEnd {
     pub notify: bool,
     pub pp: bool,
     pub setvar_id: Option<String>,
+    pub delegated: bool,
 }
 
 #[derive(Debug)]
@@ -42,7 +45,11 @@ impl ChannelEnd {
             ));
         }
 
-        check_attributes(xml_sdf, node, &["pd", "id", "pp", "notify", "setvar_id"])?;
+        check_attributes(
+            xml_sdf,
+            node,
+            &["pd", "id", "pp", "notify", "setvar_id", "delegated"],
+        )?;
         let end_pd = checked_lookup(xml_sdf, node, "pd")?;
         let end_id = checked_lookup(xml_sdf, node, "id")?.parse::<i64>().unwrap();
 
@@ -57,6 +64,21 @@ impl ChannelEnd {
         if end_id < 0 {
             return Err(value_error(xml_sdf, node, "id must be >= 0".to_string()));
         }
+
+        let delegated = if let Some(xml_delegated) = node.attribute("delegated") {
+            match str_to_bool(xml_delegated) {
+                Some(val) => val,
+                None => {
+                    return Err(value_error(
+                        xml_sdf,
+                        node,
+                        "delegated must be 'true' or 'false'".to_string(),
+                    ))
+                }
+            }
+        } else {
+            false
+        };
 
         let notify = node
             .attribute("notify")
@@ -78,14 +100,18 @@ impl ChannelEnd {
                 value_error(xml_sdf, node, "pp must be 'true' or 'false'".to_string())
             })?;
 
-        if let Some(pd_idx) = pds.iter().position(|pd| pd.name == end_pd) {
+        if let Some((pd_idx, pd)) = pds.iter().enumerate().find(|(_, pd)| pd.name == end_pd) {
             let setvar_id = node.attribute("setvar_id").map(ToOwned::to_owned);
+            if node.attribute("delegated").is_some() {
+                ensure_delegation_allowed(pd.allow_delegation, xml_sdf, node)?;
+            }
             Ok(ChannelEnd {
                 pd: pd_idx,
                 id: end_id.try_into().unwrap(),
                 notify,
                 pp,
                 setvar_id,
+                delegated,
             })
         } else {
             Err(value_error(
