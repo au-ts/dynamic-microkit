@@ -143,7 +143,7 @@ pub(in crate::capdl) const RIGHTS_IRQ_HANDLER_NTFN: Rights = RIGHTS_NTFN_SIGNAL;
 /// Minimal rights for receiving on notifications, used for PD 'INPUT_CAP'
 pub(in crate::capdl) const RIGHTS_NTFN_RECEIVE: Rights = Rights {
     read: true,
-    write: false,
+    write: true,
     // Irrelevant for notifications, seL4 manual v13.0.0 pg11
     grant: false,
     grant_reply: false,
