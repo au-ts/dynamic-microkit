@@ -277,5 +277,6 @@ pub fn capdl_util_make_vcpu_cap(vcpu_obj_id: ObjectId) -> Cap {
 pub fn capdl_util_make_arm_smc_cap(arm_smc_obj_id: ObjectId) -> Cap {
     Cap::ArmSmc(cap::ArmSmc {
         object: arm_smc_obj_id,
+        badge: Word(0),
     })
 }
