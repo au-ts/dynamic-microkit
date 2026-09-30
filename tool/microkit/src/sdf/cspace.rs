@@ -18,23 +18,23 @@ use crate::util::str_to_bool;
 pub struct CNode {
     pub name: Rc<str>,
     pub size_bits: u8,
-    pub post_capdl_untypeds: bool,
+    pub receive_initialiser_caps: bool,
 }
 
 impl CNode {
     pub(super) fn from_xml(xml_sdf: &SystemDescriptionFile, node: &dyn SdfNode) -> Result<CNode, String> {
-        check_attributes(xml_sdf, node, &["name", "size_bits", "post_capdl_untypeds"])?;
+        check_attributes(xml_sdf, node, &["name", "size_bits", "receive_initialiser_caps"])?;
 
         let name = Rc::from(checked_lookup(xml_sdf, node, "name")?);
 
-        let post_capdl_untypeds = if let Some(xml_post_capdl_untypeds) = node.attribute("post_capdl_untypeds") {
-            match str_to_bool(xml_post_capdl_untypeds) {
+        let receive_initialiser_caps = if let Some(xml_receive_initialiser_caps) = node.attribute("receive_initialiser_caps") {
+            match str_to_bool(xml_receive_initialiser_caps) {
                 Some(val) => val,
                 None => {
                     return Err(value_error(
                         xml_sdf,
                         node,
-                        "post_capdl_untypeds must be 'true' or 'false'".to_string(),
+                        "receive_initialiser_caps must be 'true' or 'false'".to_string(),
                     ))
                 }
             }
@@ -47,7 +47,7 @@ impl CNode {
         Ok(CNode {
             name,
             size_bits,
-            post_capdl_untypeds,
+            receive_initialiser_caps,
         })
     }
 }

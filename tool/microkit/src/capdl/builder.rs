@@ -664,7 +664,7 @@ pub fn build_capdl_spec(
             &(cnode.name.clone()),
             cnode.size_bits,
             Vec::new(),
-            cnode.post_capdl_untypeds,
+            cnode.receive_initialiser_caps,
         );
 
         // Have a cap at slot 0 pointing to itself
