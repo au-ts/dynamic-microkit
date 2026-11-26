@@ -523,10 +523,12 @@ SUPPORTED_CONFIGS = (
         kernel_options_arch={
             KernelArch.AARCH64: {
                 "KernelArmExportPMUUser": True,
+                "KernelArmAbsMap": True,
             },
             KernelArch.X86_64: {
                 "KernelExportPMCUser": True,
                 "KernelX86DangerousMSR": True,
+                "KernelX86AbsMap": True,
             }
         },
     ),
